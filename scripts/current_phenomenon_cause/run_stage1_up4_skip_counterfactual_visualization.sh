@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "${ROOT_DIR}"
+
+export PYTHONPATH="${ROOT_DIR}/guide_unet:${PYTHONPATH:-}"
+
+PYTHON_BIN="${PYTHON_BIN:-python}"
+if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+  echo "Cannot find Python interpreter. Set PYTHON_BIN=/path/to/python." >&2
+  exit 2
+fi
+
+DATA_DIR="${DATA_DIR:-data}"
+CASE_NAME="${CASE_NAME:-BraTS-GLI-00568-000_78}"
+CASE_SET_CSV="${CASE_SET_CSV:-stage1_explanation_suite_20260517/results/common_case_sets/formal_n512_cases.csv}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-stage1_explanation_suite_20260517/results/e13_up4_skip_counterfactual_mediation_formal_n512/visuals}"
+
+BASELINE_CKPT="${BASELINE_CKPT:-checkpoints/baseline_brats2023_scratch100_seed42/baseline/seed_42/baseline_seed42_best_val_loss.pth}"
+if [[ ! -f "${BASELINE_CKPT}" ]]; then echo "Missing baseline checkpoint: ${BASELINE_CKPT}" >&2; exit 2; fi
+
+"${PYTHON_BIN}" -u guide_unet/process_analysis/stage1_up4_skip_counterfactual_visualization.py \
+  --baseline-ckpt "${BASELINE_CKPT}" \
+  --data-dir "${DATA_DIR}" \
+  --case-name "${CASE_NAME}" \
+  --case-set-csv "${CASE_SET_CSV}" \
+  --output-root "${OUTPUT_ROOT}" \
+  "$@"

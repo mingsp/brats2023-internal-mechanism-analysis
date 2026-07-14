@@ -1,0 +1,11 @@
+numpy
+pandas
+torch
+torchvision
+tqdm
+matplotlib
+scipy
+SimpleITK
+surface-distance
+Pillow
+opencv-python
