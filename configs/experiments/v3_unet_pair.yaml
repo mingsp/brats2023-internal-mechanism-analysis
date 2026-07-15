@@ -1,0 +1,18 @@
+name: v3_unet_pair
+model_matrix: manifests/model_matrix.yaml
+observer_root: results/v1_observers
+output_root: results/v3_unet_pair
+models: [unet_baseline, unet_noskip]
+model_seeds: [42, 123, 3407]
+observer_seeds: [17, 29, 43]
+nodes: [down1, down2, down3, down4, up1, up2, up3, up4]
+discovery_split: val
+primary_split: test
+statistics:
+  bootstrap_iterations: 10000
+  bootstrap_seed: 20260715
+  reconstruction_tolerance: 1.0e-10
+v4_trigger:
+  candidate_transition: up3->up4
+  decoder_transitions: [up1->up2, up2->up3, up3->up4]
+  minimum_consistent_model_seeds: 2
