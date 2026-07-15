@@ -1,3 +1,5 @@
+dataset: brats2023_gli_2d
+
 asset_root:
   environment_variable: PPTT_ASSET_ROOT
   default: /root/autodl-tmp/A_scheme_workspace/brats2023_data

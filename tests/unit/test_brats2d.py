@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+import yaml
 
 from pptt.data.brats2d import (
     BraTS2DDataset,
@@ -21,6 +22,22 @@ from pptt.data.patient_splits import (
 IMAGE_HWC_SHAPE = (160, 160, 4)
 IMAGE_CHW_SHAPE = (4, 160, 160)
 LABEL_SHAPE = (160, 160)
+
+
+def test_data_config_names_dataset_and_uses_clean_asset_root():
+    config_path = (
+        Path(__file__).resolve().parents[2]
+        / "configs"
+        / "data"
+        / "brats2023_2d.yaml"
+    )
+    config_text = config_path.read_text(encoding="utf-8")
+    config = yaml.safe_load(config_text)
+
+    assert config["dataset"] == "brats2023_gli_2d"
+    assert config["asset_root"]["environment_variable"] == "PPTT_ASSET_ROOT"
+    assert "brats2023_workspace" not in config_text
+    assert "brats2023_internal_mechanism_workspace" not in config_text
 
 
 def _write_pair(
