@@ -1,0 +1,12 @@
+seed: 20260715
+batch_size: 8
+height: 64
+width: 64
+thresholds:
+  stage_accuracy: 1.0
+  direction_macro_f1: 0.95
+  region_iou: 0.90
+  origin_depth_accuracy: 0.95
+  branch_attribution_accuracy: 0.95
+  max_metric_reconstruction_error: 1.0e-10
+output: results/v2_synthetic/v2_construct_validation.json
