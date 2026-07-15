@@ -2,6 +2,7 @@ import csv
 import json
 import os
 import re
+import shutil
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from hashlib import sha256
@@ -23,8 +24,23 @@ class FileHashRecord(TypedDict):
     sha256: str
 
 
+def _is_link_or_junction(path: Path) -> bool:
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or (
+        is_junction is not None and bool(is_junction())
+    )
+
+
+def _reject_link_or_junction(path: Path) -> None:
+    if _is_link_or_junction(path):
+        raise ValueError(
+            f"Symbolic links or junctions are not allowed: {path}"
+        )
+
+
 def _require_directory(path: Path, label: str) -> Path:
     candidate = Path(path)
+    _reject_link_or_junction(candidate)
     if not candidate.exists():
         raise FileNotFoundError(f"{label} does not exist: {candidate}")
     if not candidate.is_dir():
@@ -34,6 +50,7 @@ def _require_directory(path: Path, label: str) -> Path:
 
 def _require_file(path: Path, label: str) -> Path:
     candidate = Path(path)
+    _reject_link_or_junction(candidate)
     if not candidate.exists():
         raise FileNotFoundError(f"{label} does not exist: {candidate}")
     if not candidate.is_file():
@@ -60,16 +77,17 @@ def count_npy_pairs(image_dir: Path, mask_dir: Path) -> int:
     """Count direct .npy pairs after requiring identical filename stems."""
     image_root = _require_directory(image_dir, "image_dir")
     mask_root = _require_directory(mask_dir, "mask_dir")
-    image_stems = {
-        path.stem
-        for path in image_root.iterdir()
-        if path.is_file() and path.suffix == ".npy"
-    }
-    mask_stems = {
-        path.stem
-        for path in mask_root.iterdir()
-        if path.is_file() and path.suffix == ".npy"
-    }
+
+    def npy_stems(root: Path) -> set[str]:
+        stems: set[str] = set()
+        for path in root.iterdir():
+            _reject_link_or_junction(path)
+            if path.is_file() and path.suffix == ".npy":
+                stems.add(path.stem)
+        return stems
+
+    image_stems = npy_stems(image_root)
+    mask_stems = npy_stems(mask_root)
     if image_stems != mask_stems:
         missing_masks = sorted(image_stems - mask_stems)
         missing_images = sorted(mask_stems - image_stems)
@@ -84,7 +102,16 @@ def count_npy_pairs(image_dir: Path, mask_dir: Path) -> int:
 def regular_files(root: Path) -> list[Path]:
     """Return recursively discovered regular files in stable relative order."""
     directory = _require_directory(root, "Root")
-    files = [path for path in directory.rglob("*") if path.is_file()]
+    files: list[Path] = []
+    pending_directories = [directory]
+    while pending_directories:
+        current_directory = pending_directories.pop()
+        for path in current_directory.iterdir():
+            _reject_link_or_junction(path)
+            if path.is_dir():
+                pending_directories.append(path)
+            elif path.is_file():
+                files.append(path)
     return sorted(files, key=lambda path: path.relative_to(directory).as_posix())
 
 
@@ -297,3 +324,55 @@ def write_sha256_csv(
         csv_writer.writerows(normalized_records)
 
     _atomic_text_write(path, write)
+
+
+def write_manifest_outputs(
+    directory: Path,
+    manifest: Mapping[str, Any],
+    records: Iterable[Mapping[str, object]],
+) -> None:
+    """Stage and commit assets.json and sha256.csv as one rollback-safe batch."""
+    output_directory = _require_directory(directory, "Manifest output directory")
+    final_paths = {
+        "assets.json": output_directory / "assets.json",
+        "sha256.csv": output_directory / "sha256.csv",
+    }
+
+    with tempfile.TemporaryDirectory(
+        dir=output_directory, prefix=".asset-manifest-stage-"
+    ) as staging_name:
+        staging_directory = Path(staging_name)
+        staged_paths = {
+            name: staging_directory / name for name in final_paths
+        }
+        write_assets_json(staged_paths["assets.json"], manifest)
+        write_sha256_csv(staged_paths["sha256.csv"], records)
+
+        backups: dict[str, Path | None] = {}
+        for name, final_path in final_paths.items():
+            backup_path: Path | None = None
+            if final_path.exists() or _is_link_or_junction(final_path):
+                existing_path = _require_file(final_path, f"Existing {name}")
+                backup_path = staging_directory / f".{name}.backup"
+                shutil.copy2(existing_path, backup_path)
+            backups[name] = backup_path
+
+        try:
+            for name, final_path in final_paths.items():
+                os.replace(staged_paths[name], final_path)
+        except Exception as commit_error:
+            rollback_errors: list[OSError] = []
+            for name, final_path in final_paths.items():
+                try:
+                    backup_path = backups[name]
+                    if backup_path is None:
+                        final_path.unlink(missing_ok=True)
+                    else:
+                        os.replace(backup_path, final_path)
+                except OSError as rollback_error:
+                    rollback_errors.append(rollback_error)
+            if rollback_errors:
+                raise OSError(
+                    "Manifest output commit failed and rollback was incomplete"
+                ) from commit_error
+            raise

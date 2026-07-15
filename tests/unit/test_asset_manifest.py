@@ -2,6 +2,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -18,6 +19,19 @@ from pptt.io.manifests import (
     write_sha256_csv,
 )
 from scripts import verify_assets
+
+
+def _create_symlink_or_skip(
+    test_case: unittest.TestCase,
+    link_path: Path,
+    target_path: Path,
+    *,
+    is_directory: bool = False,
+) -> None:
+    try:
+        link_path.symlink_to(target_path, target_is_directory=is_directory)
+    except (NotImplementedError, OSError) as error:
+        test_case.skipTest(f"symlink creation is unavailable: {error}")
 
 
 class AssetManifestTests(unittest.TestCase):
@@ -261,8 +275,30 @@ class AssetManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Duplicate relative_path"):
                 write_sha256_csv(output_path, [canonical_record, prefixed_record])
 
+    def test_regular_files_and_full_manifest_reject_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data_root = root / "raw_3d"
+            data_root.mkdir()
+            target_path = root / "target.bin"
+            target_path.write_bytes(b"target")
+            link_path = data_root / "linked.bin"
+            _create_symlink_or_skip(self, link_path, target_path)
+            manifest_path = root / "raw_3d.sha256"
+            manifest_path.write_text(
+                f"{hashlib.sha256(b'target').hexdigest()}  linked.bin\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "links|junctions"):
+                regular_files(data_root)
+            with self.assertRaisesRegex(ValueError, "links|junctions"):
+                verify_sha256_manifest(manifest_path, data_root)
+
 
 class VerifyAssetsCliTests(unittest.TestCase):
+    TEST_PAIR_COUNTS = {"train": 1, "val": 1, "test": 1}
+
     @staticmethod
     def _write_full_manifest(manifest_path: Path, data_root: Path) -> None:
         lines = []
@@ -307,22 +343,36 @@ class VerifyAssetsCliTests(unittest.TestCase):
         self._write_full_manifest(manifests_root / "raw_3d.sha256", raw_root)
         return asset_root
 
+    def _run_cli(
+        self,
+        asset_root: Path,
+        *extra_arguments: str,
+        expected_raw_file_count: int = 1,
+    ) -> tuple[int, str, str]:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            patch.object(
+                verify_assets, "EXPECTED_PAIR_COUNTS", self.TEST_PAIR_COUNTS
+            ),
+            patch.object(
+                verify_assets,
+                "EXPECTED_RAW_FILE_COUNT",
+                expected_raw_file_count,
+                create=True,
+            ),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            exit_code = verify_assets.main(
+                ["--asset-root", str(asset_root), *extra_arguments]
+            )
+        return exit_code, stdout.getvalue(), stderr.getvalue()
+
     def test_cli_writes_complete_sorted_outputs_after_full_verification(self):
         with tempfile.TemporaryDirectory() as directory:
             asset_root = self._build_asset_root(Path(directory))
-            expected_counts = {"train": 1, "val": 1, "test": 1}
-
-            with patch.object(
-                verify_assets, "EXPECTED_PAIR_COUNTS", expected_counts
-            ):
-                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                    exit_code = verify_assets.main(
-                        [
-                            "--asset-root",
-                            str(asset_root),
-                            "--verify-full-hashes",
-                        ]
-                    )
+            exit_code, _, _ = self._run_cli(asset_root)
 
             self.assertEqual(exit_code, 0)
             assets_json = asset_root / "manifests" / "assets.json"
@@ -349,12 +399,13 @@ class VerifyAssetsCliTests(unittest.TestCase):
     def test_cli_verification_failure_leaves_outputs_absent(self):
         with tempfile.TemporaryDirectory() as directory:
             asset_root = self._build_asset_root(Path(directory))
-            expected_counts = {"train": 2, "val": 1, "test": 1}
-
             with patch.object(
-                verify_assets, "EXPECTED_PAIR_COUNTS", expected_counts
+                verify_assets,
+                "EXPECTED_PAIR_COUNTS",
+                {"train": 2, "val": 1, "test": 1},
             ):
-                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                stderr = io.StringIO()
+                with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
                     exit_code = verify_assets.main(
                         ["--asset-root", str(asset_root)]
                     )
@@ -362,6 +413,142 @@ class VerifyAssetsCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 1)
             self.assertFalse((asset_root / "manifests" / "assets.json").exists())
             self.assertFalse((asset_root / "manifests" / "sha256.csv").exists())
+
+    def test_cli_defaults_to_full_hash_verification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            asset_root = self._build_asset_root(Path(directory))
+            (asset_root / "raw_3d" / "case.bin").write_bytes(b"tampered")
+
+            exit_code, _, stderr = self._run_cli(asset_root)
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("SHA-256 mismatch", stderr)
+            self.assertFalse((asset_root / "manifests" / "assets.json").exists())
+            self.assertFalse((asset_root / "manifests" / "sha256.csv").exists())
+
+    def test_cli_allows_explicit_fast_structure_check(self):
+        with tempfile.TemporaryDirectory() as directory:
+            asset_root = self._build_asset_root(Path(directory))
+            (asset_root / "raw_3d" / "case.bin").write_bytes(b"tampered")
+
+            exit_code, _, _ = self._run_cli(
+                asset_root, "--no-verify-full-hashes"
+            )
+
+            self.assertEqual(exit_code, 0)
+
+    def test_cli_requires_both_full_hash_manifests(self):
+        for filename in ("processed_2d.sha256", "raw_3d.sha256"):
+            with self.subTest(filename=filename):
+                with tempfile.TemporaryDirectory() as directory:
+                    asset_root = self._build_asset_root(Path(directory))
+                    (asset_root / "manifests" / filename).unlink()
+
+                    exit_code, _, stderr = self._run_cli(asset_root)
+
+                    self.assertEqual(exit_code, 1)
+                    self.assertIn(filename, stderr)
+                    self.assertFalse(
+                        (asset_root / "manifests" / "assets.json").exists()
+                    )
+                    self.assertFalse(
+                        (asset_root / "manifests" / "sha256.csv").exists()
+                    )
+
+    def test_cli_requires_6255_raw_files(self):
+        self.assertEqual(
+            getattr(verify_assets, "EXPECTED_RAW_FILE_COUNT", None), 6255
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            asset_root = self._build_asset_root(Path(directory))
+
+            exit_code, _, stderr = self._run_cli(
+                asset_root, expected_raw_file_count=6255
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("raw_3d file count mismatch", stderr)
+
+    def test_cli_rejects_checkpoint_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            asset_root = self._build_asset_root(Path(directory))
+            checkpoint_path = (
+                asset_root
+                / "validation_checkpoints"
+                / "baseline_seed42_best_val_loss.pth"
+            )
+            checkpoint_path.unlink()
+            _create_symlink_or_skip(
+                self, checkpoint_path, asset_root / "raw_3d" / "case.bin"
+            )
+
+            exit_code, _, stderr = self._run_cli(asset_root)
+
+            self.assertEqual(exit_code, 1)
+            self.assertRegex(stderr, "links|junctions")
+
+    def test_cli_rejects_manifests_directory_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            asset_root = self._build_asset_root(Path(directory))
+            manifests_root = asset_root / "manifests"
+            real_manifests_root = asset_root / "real_manifests"
+            manifests_root.rename(real_manifests_root)
+            _create_symlink_or_skip(
+                self,
+                manifests_root,
+                real_manifests_root,
+                is_directory=True,
+            )
+
+            exit_code, _, stderr = self._run_cli(asset_root)
+
+            self.assertEqual(exit_code, 1)
+            self.assertRegex(stderr, "links|junctions")
+            self.assertFalse((real_manifests_root / "assets.json").exists())
+            self.assertFalse((real_manifests_root / "sha256.csv").exists())
+
+    def test_cli_rolls_back_both_outputs_when_second_replace_fails(self):
+        for outputs_exist in (True, False):
+            with self.subTest(outputs_exist=outputs_exist):
+                with tempfile.TemporaryDirectory() as directory:
+                    asset_root = self._build_asset_root(Path(directory))
+                    manifests_root = asset_root / "manifests"
+                    assets_json = manifests_root / "assets.json"
+                    sha256_csv = manifests_root / "sha256.csv"
+                    old_assets = b"old assets\n"
+                    old_sha256 = b"old sha256\n"
+                    if outputs_exist:
+                        assets_json.write_bytes(old_assets)
+                        sha256_csv.write_bytes(old_sha256)
+
+                    real_replace = os.replace
+                    replacement_failed = False
+
+                    def fail_second_final_replace(
+                        source: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+                        destination: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+                    ) -> None:
+                        nonlocal replacement_failed
+                        if Path(destination) == sha256_csv and not replacement_failed:
+                            replacement_failed = True
+                            raise OSError("simulated second replacement failure")
+                        real_replace(source, destination)
+
+                    with patch(
+                        "pptt.io.manifests.os.replace",
+                        side_effect=fail_second_final_replace,
+                    ):
+                        exit_code, _, stderr = self._run_cli(asset_root)
+
+                    self.assertTrue(replacement_failed)
+                    self.assertEqual(exit_code, 1)
+                    self.assertIn("simulated second replacement failure", stderr)
+                    if outputs_exist:
+                        self.assertEqual(assets_json.read_bytes(), old_assets)
+                        self.assertEqual(sha256_csv.read_bytes(), old_sha256)
+                    else:
+                        self.assertFalse(assets_json.exists())
+                        self.assertFalse(sha256_csv.exists())
 
 
 if __name__ == "__main__":
