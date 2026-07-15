@@ -5,6 +5,7 @@ from pptt.observers.controls import (
     class_reliability,
     reliable_transition_mask,
     select_reliability_threshold,
+    transition_reliability_statistics,
 )
 from pptt.transitions.tensors import build_transition_tensor_views
 
@@ -91,3 +92,23 @@ def test_class_reliability_applies_fixed_retention_gate():
 
     np.testing.assert_allclose(result.retention, [[1.0, 0.0, 0.5]])
     np.testing.assert_array_equal(result.available, [[True, False, True]])
+
+
+def test_transition_reliability_statistics_separates_margin_and_agreement():
+    statistics = transition_reliability_statistics(
+        _probability_runs(),
+        threshold=0.10,
+        class_axis=2,
+    )
+
+    assert statistics.consistency.shape == (1,)
+    assert statistics.margin_retention.shape == (1,)
+    assert statistics.reliable_retention.shape == (1,)
+    np.testing.assert_array_equal(
+        statistics.reliable_mask,
+        reliable_transition_mask(
+            _probability_runs(),
+            threshold=0.10,
+            class_axis=2,
+        ),
+    )

@@ -1,0 +1,69 @@
+experiment: v1_real_data_observer_pilot
+seed: 20260715
+
+data:
+  asset_root_environment: PPTT_ASSET_ROOT
+  asset_root_default: /root/autodl-tmp/A_scheme_workspace/brats2023_data
+  image_dir: processed_2d/test_Image
+  mask_dir: processed_2d/test_Mask
+  expected_patient_count: 250
+
+model:
+  name: unet_baseline
+  seed: 42
+  checkpoint: validation_checkpoints/baseline_seed42_best_val_loss.pth
+  n_channels: 4
+  num_classes: 4
+  bilinear: false
+  nodes: [down1, down4, up4]
+
+pilot:
+  patient_count: 16
+  calibration_patients: 8
+  threshold_selection_patients: 4
+  evaluation_patients: 4
+  manifest: manifests/pilot_patients.txt
+  max_lesion_slices_per_patient: 6
+  max_nonlesion_slices_per_patient: 2
+  max_pixels_per_predicted_class_per_slice: 32
+
+observer:
+  seeds: [17, 29, 43]
+  l2: 0.001
+  temperature: 1.0
+  max_iter: 120
+  tolerance_grad: 1.0e-7
+  tolerance_change: 1.0e-12
+  history_size: 50
+  prediction_batch_size: 65536
+
+controls:
+  patient_permutation_seed: 20260715
+  spatial_shift_y: 40
+  spatial_shift_x: 41
+
+reliability:
+  minimum_transition_consistency: 0.90
+  minimum_class_retention: 0.50
+  threshold_grid: [0.0, 0.01, 0.02, 0.05, 0.10, 0.15, 0.20, 0.30, 0.40]
+
+statistics:
+  bootstrap_iterations: 10000
+  bootstrap_seed: 20260715
+  maximum_metric_reconstruction_error: 1.0e-10
+
+resource_extrapolation:
+  full_model_seed_count: 9
+  unet_model_seed_count: 6
+  transunet_model_seed_count: 3
+  full_node_count: 8
+  full_transition_count: 7
+  control_count: 3
+  observer_seed_count: 3
+  v3_forward_variants_per_model: 5
+  v5_forward_variants_per_model: 2
+  secondary_model:
+    enabled: true
+    name: transunet_r50_vit_b16
+    pretrained_npz: pretrained/R50+ViT-B_16.npz
+    sample_slices: 2

@@ -122,6 +122,41 @@ class ClassReliability:
     available: np.ndarray
 
 
+@dataclass(frozen=True)
+class TransitionReliabilityStatistics:
+    consistency: np.ndarray
+    margin_retention: np.ndarray
+    reliable_retention: np.ndarray
+    reliable_mask: np.ndarray
+
+
+def transition_reliability_statistics(
+    probability_runs: npt.ArrayLike,
+    *,
+    threshold: float,
+    class_axis: int = 2,
+) -> TransitionReliabilityStatistics:
+    if not np.isfinite(threshold) or threshold < 0:
+        raise ValueError("threshold must be finite and nonnegative")
+    agreement, minimum_margin = _transition_agreement_and_margin(
+        probability_runs,
+        class_axis=class_axis,
+    )
+    eligible = minimum_margin >= float(threshold)
+    consistency = np.full(eligible.shape[0], np.nan, dtype=np.float64)
+    for transition_index in range(eligible.shape[0]):
+        selected = eligible[transition_index]
+        if selected.any():
+            consistency[transition_index] = agreement[transition_index, selected].mean()
+    reliable = eligible & agreement
+    return TransitionReliabilityStatistics(
+        consistency=consistency,
+        margin_retention=eligible.mean(axis=1),
+        reliable_retention=reliable.mean(axis=1),
+        reliable_mask=reliable,
+    )
+
+
 def class_reliability(
     reliable_mask: npt.ArrayLike,
     truth: npt.ArrayLike,
