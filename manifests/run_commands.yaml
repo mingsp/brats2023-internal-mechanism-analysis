@@ -1,0 +1,31 @@
+commands:
+  test_suite: >-
+    .venv/bin/python -m pytest -v
+  v0_mathematical_gate: >-
+    .venv/bin/python scripts/run_v0_math.py --config configs/experiments/v0_math.yaml
+  v2_known_process_gate: >-
+    .venv/bin/python scripts/run_v2_synthetic.py --config configs/experiments/v2_synthetic.yaml
+  segmentation_training_matrix: >-
+    .venv/bin/python scripts/run_training_matrix.py --jobs unet_baseline:123 unet_baseline:3407 unet_noskip:123 unet_noskip:3407 transunet_r50_vit_b16:42 transunet_r50_vit_b16:123 transunet_r50_vit_b16:3407 --resume --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --log-dir logs/segmentation_training
+  v1_observer_training: >-
+    .venv/bin/python scripts/train_observers.py --matrix manifests/model_matrix.yaml --config configs/observers/default.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --output-root results/v1_observers --resume --device cuda
+  v1_control_evaluation: >-
+    .venv/bin/python scripts/run_v1_observer.py --matrix manifests/model_matrix.yaml --config configs/observers/default.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --output-root results/v1_observers --device cuda
+  v1_parameter_randomization: >-
+    .venv/bin/python scripts/run_parameter_randomization.py --matrix manifests/model_matrix.yaml --config configs/observers/default.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --output-root results/v1_observers --resume --device cuda
+  v3_unet_pair: >-
+    .venv/bin/python scripts/run_v3_unet_pair.py --config configs/experiments/v3_unet_pair.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --resume --device cuda
+  v4_locked_intervention: >-
+    .venv/bin/python scripts/run_v4_intervention.py --config configs/experiments/v4_up4_intervention.yaml --trigger results/v3_unet_pair/v4_trigger.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --resume --device cuda
+  v5_transunet_transfer: >-
+    .venv/bin/python scripts/run_v5_transunet.py --config configs/experiments/v5_transunet.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --resume --device cuda
+  figures_english: >-
+    .venv/bin/python scripts/make_paper_figures.py --results-root results --language en --dpi 400
+  figures_chinese: >-
+    .venv/bin/python scripts/make_paper_figures.py --results-root results --language zh --dpi 400
+  short_replay_audit: >-
+    .venv/bin/python scripts/replay_short_flows.py
+  build_result_inventory: >-
+    PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data .venv/bin/python scripts/build_result_inventory.py
+  verify_result_inventory: >-
+    PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data .venv/bin/python scripts/build_result_inventory.py --verify
