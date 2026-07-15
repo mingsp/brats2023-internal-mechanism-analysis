@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pptt-process-xai"
+version = "0.1.0"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "numpy==1.26.4",
+    "scipy==1.11.4",
+    "pandas==2.2.3",
+    "scikit-learn==1.5.2",
+    "PyYAML==6.0.2",
+    "tqdm==4.67.1",
+    "matplotlib==3.9.2",
+    "seaborn==0.13.2",
+    "pyarrow==17.0.0",
+    "ml-collections==0.1.1",
+    "gdown==5.2.0",
+    "grad-cam==1.5.5",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest==8.3.5",
+    "hypothesis==6.124.7",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

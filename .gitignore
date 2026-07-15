@@ -1,0 +1,27 @@
+# Python caches and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments and package builds
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
+# Notebook, editor, and OS metadata
+.ipynb_checkpoints/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Large model checkpoints
+*.pt
+*.pth
+*.ckpt
