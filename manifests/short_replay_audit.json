@@ -1,0 +1,74 @@
+{
+  "all_byte_identical": true,
+  "all_payload_identical": true,
+  "flows": [
+    {
+      "after_sha256": "1402533068ceef1fa0bd6cf0d028d74d9fdbb682c10d269fbc863134b338629e",
+      "before_sha256": "1402533068ceef1fa0bd6cf0d028d74d9fdbb682c10d269fbc863134b338629e",
+      "byte_identical": true,
+      "command": "python scripts/run_v0_math.py --config /root/autodl-tmp/A_scheme_workspace/pptt_process_xai_workspace/configs/experiments/v0_math.yaml",
+      "ended_at": "2026-07-15T11:20:17.949869+00:00",
+      "label": "V0",
+      "numeric_summary": {
+        "final_depth_range": [
+          4,
+          8
+        ],
+        "max_confusion_error": 0,
+        "max_flow_error": 0,
+        "max_metric_reconstruction_error": 0.0,
+        "max_telescoping_error": 0.0,
+        "minimum_prediction_margin": 7.328448702670354e-05,
+        "num_classes": 4,
+        "num_pixels": 1024,
+        "passed": true,
+        "seed": 20260715,
+        "stages": 8
+      },
+      "payload_identical": true,
+      "result_directory_absent_before_run": true,
+      "return_code": 0,
+      "started_at": "2026-07-15T11:20:17.730516+00:00"
+    },
+    {
+      "after_sha256": "ad8118f104fdf64693059ae731b827da048517b24dfe16ad3fa894bb5a3c4468",
+      "before_sha256": "ad8118f104fdf64693059ae731b827da048517b24dfe16ad3fa894bb5a3c4468",
+      "byte_identical": true,
+      "command": "python scripts/run_v2_synthetic.py --config /root/autodl-tmp/A_scheme_workspace/pptt_process_xai_workspace/configs/experiments/v2_synthetic.yaml",
+      "ended_at": "2026-07-15T11:20:18.321537+00:00",
+      "label": "V2",
+      "numeric_summary": {
+        "comparators": {
+          "adjacent_hard_mask_iou": {
+            "mean_iou": 0.7883380794855472
+          },
+          "gradcam": {
+            "region_iou": 0.28243902439024393
+          },
+          "layercam": {
+            "region_iou": 0.21463414634146344
+          },
+          "node_dice": {
+            "stage_accuracy": 1.0
+          }
+        },
+        "passed": true,
+        "pptt": {
+          "branch_attribution_accuracy": 1.0,
+          "direction_macro_f1": 1.0,
+          "max_metric_reconstruction_error": 0.0,
+          "origin_depth_accuracy": 1.0,
+          "region_iou": 1.0,
+          "stage_accuracy": 1.0
+        },
+        "seed": 20260715
+      },
+      "payload_identical": true,
+      "result_directory_absent_before_run": true,
+      "return_code": 0,
+      "started_at": "2026-07-15T11:20:17.952816+00:00"
+    }
+  ],
+  "generated_at": "2026-07-15T11:20:18.323078+00:00",
+  "schema_version": 1
+}
