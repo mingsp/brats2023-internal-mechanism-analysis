@@ -1,0 +1,41 @@
+name: v4_up4_intervention
+model_matrix: manifests/model_matrix.yaml
+v3_root: results/v3_unet_pair
+output_root: results/v4_up4_intervention
+model: unet_baseline
+nodes: [down1, down2, down3, down4, up1, up2, up3, up4]
+discovery_split: val
+primary_split: test
+target:
+  transition: up3->up4
+  truth_classes: [1, 2, 3]
+  require_reliable_transition: true
+  control_definition: stable_correct
+matching:
+  boundary_bin_edges: [1.5, 3.5, 7.5]
+  quantile_bin_count: 4
+  confidence_caliper: 1
+  activation_norm_caliper: 1
+  minimum_pairs_per_patient: 64
+  maximum_controls_per_slice: 8192
+intervention:
+  replacement_alphas: [0.25, 0.50, 0.75, 1.00]
+  primary_alpha: 1.00
+  spatial_shift_yx: [8, 8]
+  boundary_band_pixels: 3.0
+  restore_logit_tolerance: 1.0e-6
+ood:
+  class_conditional: true
+  descriptor: center_mean_std_3x3
+  reference_patient_count: 25
+  vectors_per_slice: 64
+  max_samples: 50000
+  pca_components: 32
+  neighbors: 5
+  threshold_quantile: 0.99
+  relative_p99_tolerance: 0.05
+  exceedance_fraction_tolerance: 0.01
+  seed: 20260715
+statistics:
+  bootstrap_iterations: 10000
+  bootstrap_seed: 20260715

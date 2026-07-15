@@ -15,6 +15,7 @@ from pptt.observers.linear import LinearObserver
 class SlicePathTrace:
     states: np.ndarray
     reliable: np.ndarray
+    margins: np.ndarray
     truth: np.ndarray
     final_model_state: np.ndarray
 
@@ -125,6 +126,8 @@ class ObserverPathTracer:
         restart_margins = ordered[:, :, -1] - ordered[:, :, -2]
         canonical = runs.mean(axis=0)
         states = canonical.argmax(axis=1).astype(np.uint8)
+        canonical_ordered = np.sort(canonical, axis=1)
+        canonical_margins = canonical_ordered[:, -1] - canonical_ordered[:, -2]
         node_agreement = np.all(restart_states == restart_states[:1], axis=0)
         pair_agreement = node_agreement[:-1] & node_agreement[1:]
         pair_margin = np.minimum(
@@ -135,6 +138,7 @@ class ObserverPathTracer:
         return SlicePathTrace(
             states=states,
             reliable=reliable,
+            margins=canonical_margins.astype(np.float32, copy=False),
             truth=truth_array.astype(np.uint8, copy=False),
             final_model_state=final_model_state.astype(np.uint8, copy=False),
         )

@@ -17,6 +17,7 @@ def test_case_summary_recovers_persistent_events_and_exact_metrics():
     trace = CaseTrace(
         states=states,
         reliable=np.ones((2, 1, 1, 6), dtype=bool),
+        margins=np.ones_like(states, dtype=np.float32),
         truth=truth,
     )
 

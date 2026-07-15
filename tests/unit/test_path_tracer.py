@@ -74,4 +74,5 @@ def test_path_tracer_forms_canonical_states_and_restart_reliability():
     np.testing.assert_array_equal(result.states[0], [[0, 1], [0, 1]])
     np.testing.assert_array_equal(result.states[1], [[1, 0], [1, 0]])
     np.testing.assert_array_equal(result.reliable, np.ones((1, 2, 2), dtype=bool))
+    assert np.all(result.margins > 0.9)
     np.testing.assert_array_equal(result.final_model_state, [[0, 1], [0, 1]])

@@ -12,6 +12,7 @@ import numpy as np
 class CaseTrace:
     states: np.ndarray
     reliable: np.ndarray
+    margins: np.ndarray | None = None
     truth: np.ndarray | None = None
     final_model_state: np.ndarray | None = None
     slice_ids: tuple[str, ...] = ()
@@ -21,6 +22,7 @@ def _validated_trace(
     *,
     states: np.ndarray,
     reliable: np.ndarray,
+    margins: np.ndarray | None,
     truth: np.ndarray | None,
     final_model_state: np.ndarray | None,
     slice_ids: tuple[str, ...],
@@ -36,6 +38,14 @@ def _validated_trace(
         raise ValueError(
             f"reliable must be boolean with shape {expected_reliable_shape}"
         )
+    margin_array = None if margins is None else np.asarray(margins)
+    if margin_array is not None:
+        if margin_array.shape != state_array.shape:
+            raise ValueError("margins must match the complete state path")
+        if not np.issubdtype(margin_array.dtype, np.floating):
+            raise ValueError("margins must have floating dtype")
+        if not np.isfinite(margin_array).all() or np.any(margin_array < 0):
+            raise ValueError("margins must be finite and nonnegative")
     truth_array = None if truth is None else np.asarray(truth)
     if truth_array is not None:
         if truth_array.shape != state_array.shape[1:]:
@@ -56,6 +66,9 @@ def _validated_trace(
     return CaseTrace(
         states=state_array.astype(np.uint8, copy=False),
         reliable=reliable_array,
+        margins=(
+            None if margin_array is None else margin_array.astype(np.float16, copy=False)
+        ),
         truth=None if truth_array is None else truth_array.astype(np.uint8, copy=False),
         final_model_state=(
             None if final_array is None else final_array.astype(np.uint8, copy=False)
@@ -69,6 +82,7 @@ def save_case_trace(
     *,
     states: np.ndarray,
     reliable: np.ndarray,
+    margins: np.ndarray | None = None,
     truth: np.ndarray | None = None,
     final_model_state: np.ndarray | None = None,
     slice_ids: tuple[str, ...] = (),
@@ -76,6 +90,7 @@ def save_case_trace(
     trace = _validated_trace(
         states=states,
         reliable=reliable,
+        margins=margins,
         truth=truth,
         final_model_state=final_model_state,
         slice_ids=slice_ids,
@@ -86,11 +101,14 @@ def save_case_trace(
         "states": trace.states,
         "reliable": trace.reliable,
         "slice_ids": np.asarray(trace.slice_ids),
+        "has_margins": np.asarray(trace.margins is not None),
         "has_truth": np.asarray(trace.truth is not None),
         "has_final_model_state": np.asarray(trace.final_model_state is not None),
     }
     if trace.truth is not None:
         payload["truth"] = trace.truth
+    if trace.margins is not None:
+        payload["margins"] = trace.margins
     if trace.final_model_state is not None:
         payload["final_model_state"] = trace.final_model_state
     temporary: Path | None = None
@@ -112,11 +130,17 @@ def save_case_trace(
 
 def load_case_trace(path: str | Path) -> CaseTrace:
     with np.load(Path(path), allow_pickle=False) as archive:
+        has_margins = (
+            bool(archive["has_margins"].item())
+            if "has_margins" in archive.files
+            else False
+        )
         has_truth = bool(archive["has_truth"].item())
         has_final = bool(archive["has_final_model_state"].item())
         return _validated_trace(
             states=archive["states"],
             reliable=archive["reliable"],
+            margins=archive["margins"] if has_margins else None,
             truth=archive["truth"] if has_truth else None,
             final_model_state=archive["final_model_state"] if has_final else None,
             slice_ids=tuple(str(value) for value in archive["slice_ids"].tolist()),

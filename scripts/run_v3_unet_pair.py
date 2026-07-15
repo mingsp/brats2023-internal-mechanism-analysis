@@ -126,6 +126,7 @@ def _trace_patient(
 ) -> CaseTrace:
     states = []
     reliable = []
+    margins = []
     truth = []
     final_model_state = []
     for record in records:
@@ -136,11 +137,13 @@ def _trace_patient(
         traced = tracer.trace_slice(image, label)
         states.append(traced.states)
         reliable.append(traced.reliable)
+        margins.append(traced.margins)
         truth.append(traced.truth)
         final_model_state.append(traced.final_model_state)
     return CaseTrace(
         states=np.stack(states, axis=1),
         reliable=np.stack(reliable, axis=1),
+        margins=np.stack(margins, axis=1),
         truth=np.stack(truth),
         final_model_state=np.stack(final_model_state),
         slice_ids=tuple(record.slice_id for record in records),
@@ -499,6 +502,7 @@ def _run_job(
         "nodes": nodes,
         "observer_seeds": observer_seeds,
         "reliability_threshold": threshold,
+        "trace_schema_version": 2,
     }
     _prepare_job_manifest(
         job_output / "job_manifest.json",
@@ -535,6 +539,7 @@ def _run_job(
                     artifact_path,
                     states=trace.states,
                     reliable=trace.reliable,
+                    margins=trace.margins,
                     truth=trace.truth,
                     final_model_state=trace.final_model_state,
                     slice_ids=trace.slice_ids,
