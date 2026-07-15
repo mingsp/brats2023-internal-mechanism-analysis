@@ -7,6 +7,7 @@ __pycache__/
 .coverage
 htmlcov/
 results/
+logs/
 
 # Virtual environments and package builds
 .venv/

@@ -3,6 +3,9 @@ n_channels: 4
 num_classes: 4
 img_size: 160
 initialization_manifest: /root/autodl-tmp/A_scheme_workspace/brats2023_data/manifests/transunet_initialization.json
+initialization:
+  mode: official_npz
+  pretrained_npz: pretrained/R50+ViT-B_16.npz
 checkpoint_nodes:
   - down1
   - down2
@@ -12,3 +15,19 @@ checkpoint_nodes:
   - up2
   - up3
   - up4
+training:
+  epochs: 100
+  batch_size: 8
+  effective_batch_size: 8
+  batch_size_status: locked
+  memory_profile: results/training_resource/transunet_batch_profile.json
+  memory_limit_gib: 20
+  learning_rate: 3.0e-4
+  weight_decay: 0.01
+  eta_min: 1.0e-6
+  patience: 15
+  cross_entropy_weight: 0.2
+  dice_weight: 0.8
+  amp: false
+  deterministic: true
+  num_workers: 4
