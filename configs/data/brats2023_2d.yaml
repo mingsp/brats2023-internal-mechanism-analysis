@@ -1,0 +1,36 @@
+asset_root:
+  environment_variable: PPTT_ASSET_ROOT
+  default: /root/autodl-tmp/A_scheme_workspace/brats2023_data
+
+image:
+  source_shape: [160, 160, 4]
+  tensor_shape: [4, 160, 160]
+  channels: 4
+
+label:
+  shape: [160, 160]
+  classes: 4
+  mapping:
+    0: 0
+    1: 1
+    2: 2
+    3: 3
+    4: 3
+
+split_file: processed_2d/splits/brats2023_gli_seed42.json
+splits:
+  train:
+    image_dir: processed_2d/train_Image
+    mask_dir: processed_2d/train_Mask
+    slice_count: 56937
+    patient_count: 876
+  val:
+    image_dir: processed_2d/val_Image
+    mask_dir: processed_2d/val_Mask
+    slice_count: 8366
+    patient_count: 125
+  test:
+    image_dir: processed_2d/test_Image
+    mask_dir: processed_2d/test_Mask
+    slice_count: 16118
+    patient_count: 250
