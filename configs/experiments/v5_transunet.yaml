@@ -1,0 +1,15 @@
+name: v5_transunet_transfer
+model_matrix: manifests/model_matrix.yaml
+observer_root: results/v1_observers
+output_root: results/v5_transunet
+model: transunet_r50_vit_b16
+model_seeds: [42, 123, 3407]
+observer_seeds: [17, 29, 43]
+nodes: [down1, down2, down3, down4, up1, up2, up3, up4]
+primary_split: test
+statistics:
+  reconstruction_tolerance: 1.0e-10
+required_lineage_outputs:
+  - final_state_depth
+  - correct_state_depth
+  - terminal_error_origin_depth
