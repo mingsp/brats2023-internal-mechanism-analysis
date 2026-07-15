@@ -6,6 +6,7 @@ from torch import nn
 
 from pptt.hooks.checkpoints import load_checkpoint
 from pptt.models.protocol import ModelAdapter
+from pptt.models.transunet import build_transunet, checkpoint_modules
 from pptt.models.unet import UNetBaseline, UNetNoSkip
 from pptt.types import ForwardTrace
 
@@ -22,12 +23,16 @@ UNET_CHECKPOINT_NAMES = (
 )
 
 
-class UNetAdapter(ModelAdapter):
-    checkpoint_names = UNET_CHECKPOINT_NAMES
-
-    def __init__(self, model: nn.Module) -> None:
+class HookedModelAdapter(ModelAdapter):
+    def __init__(
+        self,
+        model: nn.Module,
+        modules: OrderedDict[str, nn.Module],
+    ) -> None:
         super().__init__()
         self.model = model
+        self._checkpoint_modules = modules
+        self.checkpoint_names = tuple(modules)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
@@ -49,8 +54,7 @@ class UNetAdapter(ModelAdapter):
             return hook
 
         try:
-            for name in self.checkpoint_names:
-                module = getattr(self.model, name)
+            for name, module in self._checkpoint_modules.items():
                 handles.append(module.register_forward_hook(capture(name)))
             logits = self.model(x)
         finally:
@@ -78,20 +82,39 @@ class UNetAdapter(ModelAdapter):
         return load_checkpoint(self.model, path, map_location=map_location)
 
 
+class UNetAdapter(HookedModelAdapter):
+    def __init__(self, model: nn.Module) -> None:
+        super().__init__(
+            model,
+            OrderedDict(
+                (name, getattr(model, name)) for name in UNET_CHECKPOINT_NAMES
+            ),
+        )
+
+
 def build_adapter(
     name: str,
     n_channels: int = 4,
     num_classes: int = 4,
     bilinear: bool = False,
+    img_size: int = 160,
 ) -> ModelAdapter:
     builders: dict[str, type[nn.Module]] = {
         "unet_baseline": UNetBaseline,
         "unet_noskip": UNetNoSkip,
     }
+    if name == "transunet_r50_vit_b16":
+        transunet = build_transunet(
+            n_channels=n_channels,
+            num_classes=num_classes,
+            img_size=img_size,
+        )
+        return HookedModelAdapter(transunet, checkpoint_modules(transunet))
     try:
         model_type = builders[name]
     except KeyError as exc:
-        supported = ", ".join(sorted(builders))
+        all_supported = (*builders, "transunet_r50_vit_b16")
+        supported = ", ".join(sorted(all_supported))
         raise ValueError(
             f"Unknown model adapter {name!r}; expected one of: {supported}"
         ) from exc

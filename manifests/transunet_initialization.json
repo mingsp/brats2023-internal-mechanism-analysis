@@ -1,0 +1,31 @@
+{
+  "embedding_kernel_hwio_shape": [
+    1,
+    1,
+    1024,
+    768
+  ],
+  "key_count": 358,
+  "mode": "pretrained",
+  "path": "/root/autodl-tmp/A_scheme_workspace/brats2023_data/pretrained/R50+ViT-B_16.npz",
+  "required_keys": [
+    "embedding/kernel",
+    "embedding/bias",
+    "Transformer/posembed_input/pos_embedding",
+    "Transformer/encoder_norm/scale",
+    "Transformer/encoder_norm/bias",
+    "conv_root/kernel",
+    "gn_root/scale",
+    "gn_root/bias"
+  ],
+  "root_kernel_hwio_shape": [
+    7,
+    7,
+    3,
+    64
+  ],
+  "sha256": "ff009bf39bb4f9198b834cfe46aba2bfdaf730e933ab3e3c4b1edf4226eaafbe",
+  "size_bytes": 461217452,
+  "source": "google_storage",
+  "source_url": "https://storage.googleapis.com/vit_models/imagenet21k/R50+ViT-B_16.npz"
+}
