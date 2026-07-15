@@ -1,0 +1,22 @@
+observer_seeds: [17, 29, 43]
+training:
+  l2: 0.001
+  temperature: 1.0
+  max_iter: 120
+  tolerance_grad: 1.0e-7
+  tolerance_change: 1.0e-12
+  history_size: 50
+cache:
+  max_lesion_slices_per_patient: 6
+  max_nonlesion_slices_per_patient: 2
+  max_pixels_per_predicted_class_per_slice: 32
+  max_pixels_per_node: 262144
+  feature_dtype: float16
+controls:
+  patient_permutation_seed: 20260715
+  spatial_shift_y: 40
+  spatial_shift_x: 41
+reliability:
+  minimum_transition_consistency: 0.90
+  minimum_class_retention: 0.50
+  threshold_grid: [0.0, 0.01, 0.02, 0.05, 0.10, 0.15, 0.20, 0.30, 0.40]

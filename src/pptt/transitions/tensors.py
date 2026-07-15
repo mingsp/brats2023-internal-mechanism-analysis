@@ -120,6 +120,13 @@ class StateFlow:
     occupancy_delta: np.ndarray
 
 
+@dataclass(frozen=True)
+class TransitionTensorViews:
+    full: np.ndarray
+    reliable: np.ndarray
+    uncertain_pixel_count: int
+
+
 def state_flows_from_transition(tensor: npt.ArrayLike) -> StateFlow:
     counts = _validate_transition_tensor(tensor)
     before, after = confusions_from_transition(counts)
@@ -128,4 +135,33 @@ def state_flows_from_transition(tensor: npt.ArrayLike) -> StateFlow:
         inflow=after - stable,
         outflow=before - stable,
         occupancy_delta=after - before,
+    )
+
+
+def build_transition_tensor_views(
+    y: npt.ArrayLike,
+    z0: npt.ArrayLike,
+    z1: npt.ArrayLike,
+    reliable: npt.ArrayLike,
+    num_classes: int,
+) -> TransitionTensorViews:
+    truth, state0, state1 = validate_label_arrays(
+        y,
+        z0,
+        z1,
+        num_classes=num_classes,
+    )
+    reliable_mask = _validate_mask(reliable, truth.shape)
+    full = build_transition_tensor(truth, state0, state1, num_classes)
+    selected = build_transition_tensor(
+        truth,
+        state0,
+        state1,
+        num_classes,
+        mask=reliable_mask,
+    )
+    return TransitionTensorViews(
+        full=full,
+        reliable=selected,
+        uncertain_pixel_count=int((~reliable_mask).sum()),
     )
