@@ -29,6 +29,8 @@ test = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["pptt*"]
+namespaces = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

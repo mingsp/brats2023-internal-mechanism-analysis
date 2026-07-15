@@ -25,3 +25,8 @@ Thumbs.db
 *.pt
 *.pth
 *.ckpt
+
+# Allow small model fixtures used by tests
+!tests/fixtures/**/*.pt
+!tests/fixtures/**/*.pth
+!tests/fixtures/**/*.ckpt
