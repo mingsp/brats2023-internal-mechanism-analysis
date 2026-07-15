@@ -1,0 +1,7 @@
+seed: 20260715
+num_classes: 4
+stages: 8
+height: 32
+width: 32
+tolerance: 1.0e-10
+output: results/v0_math/v0_math_report.json
