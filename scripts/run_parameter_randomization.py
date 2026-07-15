@@ -322,7 +322,6 @@ def _fit_and_evaluate_node(
             predict_observer_probabilities(
                 observer,
                 patient.features[node],
-                temperature=config.temperature,
                 device=device,
             )
             for observer in observers

@@ -230,7 +230,6 @@ def _evaluate_job(
                         prediction = predict_observer_probabilities(
                             observers[node][control][seed],
                             cache.features[node],
-                            temperature=temperature,
                             device=device,
                         )
                         seed_predictions.append(prediction)

@@ -8,7 +8,7 @@ from pptt.observers.evaluation import (
 from pptt.observers.linear import LinearObserver
 
 
-def test_observer_prediction_applies_selected_temperature():
+def test_observer_prediction_returns_canonical_untempered_probabilities():
     observer = LinearObserver(2, 2)
     with torch.no_grad():
         observer.projection.weight.copy_(
@@ -16,21 +16,15 @@ def test_observer_prediction_applies_selected_temperature():
         )
         observer.projection.bias.zero_()
     features = np.array([[2.0, 0.0], [0.0, 2.0]], dtype=np.float32)
-    cold = predict_observer_probabilities(
+    actual = predict_observer_probabilities(
         observer,
         features,
-        temperature=0.5,
         device="cpu",
     )
-    warm = predict_observer_probabilities(
-        observer,
-        features,
-        temperature=2.0,
-        device="cpu",
-    )
+    expected = torch.softmax(torch.tensor([[2.0, 0.0], [0.0, 2.0]]), dim=1).numpy()
 
-    assert cold[0, 0] > warm[0, 0]
-    np.testing.assert_allclose(cold.sum(axis=1), 1.0)
+    np.testing.assert_allclose(actual, expected, rtol=0.0, atol=1e-7)
+    np.testing.assert_allclose(actual.sum(axis=1), 1.0)
 
 
 def test_patient_probability_metrics_keep_patient_as_unit():

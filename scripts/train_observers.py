@@ -284,7 +284,6 @@ def _fit_job_observers(
                 prediction = predict_observer_probabilities(
                     observer,
                     val_rows.features,
-                    temperature=temperature,
                     device=device,
                     batch_size=batch_size,
                 )

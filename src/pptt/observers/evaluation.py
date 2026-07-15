@@ -11,12 +11,11 @@ def predict_observer_probabilities(
     observer: LinearObserver,
     features: np.ndarray,
     *,
-    temperature: float,
     device: str | torch.device,
     batch_size: int = 65536,
 ) -> np.ndarray:
-    if temperature <= 0 or batch_size <= 0:
-        raise ValueError("temperature and batch_size must be positive")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
     feature_array = np.asarray(features)
     if feature_array.ndim != 2 or feature_array.shape[1] != observer.in_channels:
         raise ValueError("features do not match the observer input channels")
@@ -29,7 +28,7 @@ def predict_observer_probabilities(
                 feature_array[start : start + batch_size].astype(np.float32, copy=False)
             ).to(target_device)
             logits = observer(batch[:, :, None, None], output_size=(1, 1))[:, :, 0, 0]
-            output.append(torch.softmax(logits / float(temperature), dim=1).cpu().numpy())
+            output.append(torch.softmax(logits, dim=1).cpu().numpy())
     return np.concatenate(output).astype(np.float32, copy=False)
 
 
