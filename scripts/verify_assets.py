@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pptt.io.manifests import (
     FileHashRecord,
+    _is_link_or_junction,
     count_npy_pairs,
     file_hash_record,
     regular_files,
@@ -25,13 +26,6 @@ FULL_HASH_MANIFESTS = (
 )
 
 
-def _is_link_or_junction(path: Path) -> bool:
-    is_junction = getattr(path, "is_junction", None)
-    return path.is_symlink() or (
-        is_junction is not None and bool(is_junction())
-    )
-
-
 def _reject_link_or_junction(path: Path) -> None:
     if _is_link_or_junction(path):
         raise ValueError(
@@ -40,7 +34,10 @@ def _reject_link_or_junction(path: Path) -> None:
 
 
 def _require_directory(path: Path, label: str) -> Path:
-    _reject_link_or_junction(path)
+    try:
+        _reject_link_or_junction(path)
+    except FileNotFoundError as error:
+        raise FileNotFoundError(f"{label} does not exist: {path}") from error
     if not path.exists():
         raise FileNotFoundError(f"{label} does not exist: {path}")
     if not path.is_dir():
@@ -49,7 +46,10 @@ def _require_directory(path: Path, label: str) -> Path:
 
 
 def _require_file(path: Path, label: str) -> Path:
-    _reject_link_or_junction(path)
+    try:
+        _reject_link_or_junction(path)
+    except FileNotFoundError as error:
+        raise FileNotFoundError(f"{label} does not exist: {path}") from error
     if not path.exists():
         raise FileNotFoundError(f"{label} does not exist: {path}")
     if not path.is_file():

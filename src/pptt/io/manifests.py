@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from hashlib import sha256
@@ -16,6 +17,9 @@ _SHA256_LINE = re.compile(
     r"^(?P<sha256>[0-9a-fA-F]{64})(?:  | \*)(?P<relative_path>.+)$"
 )
 _SHA256_VALUE = re.compile(r"^[0-9a-fA-F]{64}$")
+_FILE_ATTRIBUTE_REPARSE_POINT = getattr(
+    stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x0400
+)
 
 
 class FileHashRecord(TypedDict):
@@ -25,10 +29,14 @@ class FileHashRecord(TypedDict):
 
 
 def _is_link_or_junction(path: Path) -> bool:
-    is_junction = getattr(path, "is_junction", None)
-    return path.is_symlink() or (
-        is_junction is not None and bool(is_junction())
-    )
+    candidate = Path(path)
+    if candidate.is_symlink():
+        return True
+    is_junction = getattr(candidate, "is_junction", None)
+    if is_junction is not None and bool(is_junction()):
+        return True
+    file_attributes = getattr(os.lstat(candidate), "st_file_attributes", 0)
+    return bool(file_attributes & _FILE_ATTRIBUTE_REPARSE_POINT)
 
 
 def _reject_link_or_junction(path: Path) -> None:
@@ -40,7 +48,12 @@ def _reject_link_or_junction(path: Path) -> None:
 
 def _require_directory(path: Path, label: str) -> Path:
     candidate = Path(path)
-    _reject_link_or_junction(candidate)
+    try:
+        _reject_link_or_junction(candidate)
+    except FileNotFoundError as error:
+        raise FileNotFoundError(
+            f"{label} does not exist: {candidate}"
+        ) from error
     if not candidate.exists():
         raise FileNotFoundError(f"{label} does not exist: {candidate}")
     if not candidate.is_dir():
@@ -50,7 +63,12 @@ def _require_directory(path: Path, label: str) -> Path:
 
 def _require_file(path: Path, label: str) -> Path:
     candidate = Path(path)
-    _reject_link_or_junction(candidate)
+    try:
+        _reject_link_or_junction(candidate)
+    except FileNotFoundError as error:
+        raise FileNotFoundError(
+            f"{label} does not exist: {candidate}"
+        ) from error
     if not candidate.exists():
         raise FileNotFoundError(f"{label} does not exist: {candidate}")
     if not candidate.is_file():
@@ -351,7 +369,7 @@ def write_manifest_outputs(
         backups: dict[str, Path | None] = {}
         for name, final_path in final_paths.items():
             backup_path: Path | None = None
-            if final_path.exists() or _is_link_or_junction(final_path):
+            if os.path.lexists(final_path):
                 existing_path = _require_file(final_path, f"Existing {name}")
                 backup_path = staging_directory / f".{name}.backup"
                 shutil.copy2(existing_path, backup_path)

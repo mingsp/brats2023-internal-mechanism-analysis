@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -10,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from pptt.io.manifests import (
+    _is_link_or_junction,
     count_npy_pairs,
     file_hash_record,
     regular_files,
@@ -32,6 +34,27 @@ def _create_symlink_or_skip(
         link_path.symlink_to(target_path, target_is_directory=is_directory)
     except (NotImplementedError, OSError) as error:
         test_case.skipTest(f"symlink creation is unavailable: {error}")
+
+
+def _create_windows_junction_or_skip(
+    test_case: unittest.TestCase, junction_path: Path, target_path: Path
+) -> None:
+    result = subprocess.run(
+        [
+            "cmd.exe",
+            "/c",
+            "mklink",
+            "/J",
+            str(junction_path),
+            str(target_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout).strip()
+        test_case.skipTest(f"junction creation is unavailable: {details}")
 
 
 class AssetManifestTests(unittest.TestCase):
@@ -295,6 +318,32 @@ class AssetManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "links|junctions"):
                 verify_sha256_manifest(manifest_path, data_root)
 
+    def test_link_detector_propagates_missing_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing_path = Path(directory) / "missing"
+
+            with self.assertRaises(FileNotFoundError):
+                _is_link_or_junction(missing_path)
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction test")
+    def test_regular_files_rejects_windows_junction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scan_root = root / "scan"
+            scan_root.mkdir()
+            target_root = root / "target"
+            target_root.mkdir()
+            (target_root / "data.bin").write_bytes(b"data")
+            junction_path = scan_root / "junction"
+            _create_windows_junction_or_skip(self, junction_path, target_root)
+
+            try:
+                with self.assertRaisesRegex(ValueError, "links|junctions"):
+                    regular_files(scan_root)
+            finally:
+                if junction_path.exists():
+                    junction_path.rmdir()
+
 
 class VerifyAssetsCliTests(unittest.TestCase):
     TEST_PAIR_COUNTS = {"train": 1, "val": 1, "test": 1}
@@ -506,6 +555,29 @@ class VerifyAssetsCliTests(unittest.TestCase):
             self.assertRegex(stderr, "links|junctions")
             self.assertFalse((real_manifests_root / "assets.json").exists())
             self.assertFalse((real_manifests_root / "sha256.csv").exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction test")
+    def test_cli_rejects_manifests_directory_junction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            asset_root = self._build_asset_root(root)
+            manifests_root = asset_root / "manifests"
+            real_manifests_root = root / "real_manifests"
+            manifests_root.rename(real_manifests_root)
+            _create_windows_junction_or_skip(
+                self, manifests_root, real_manifests_root
+            )
+
+            try:
+                exit_code, _, stderr = self._run_cli(asset_root)
+
+                self.assertEqual(exit_code, 1)
+                self.assertRegex(stderr, "links|junctions")
+                self.assertFalse((real_manifests_root / "assets.json").exists())
+                self.assertFalse((real_manifests_root / "sha256.csv").exists())
+            finally:
+                if manifests_root.exists():
+                    manifests_root.rmdir()
 
     def test_cli_rolls_back_both_outputs_when_second_replace_fails(self):
         for outputs_exist in (True, False):
