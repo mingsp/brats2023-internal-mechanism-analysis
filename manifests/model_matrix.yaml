@@ -1,0 +1,59 @@
+asset_root:
+  environment_variable: PPTT_ASSET_ROOT
+  default: /root/autodl-tmp/A_scheme_workspace/brats2023_data
+
+jobs:
+  - model: unet_baseline
+    seed: 42
+    model_config: configs/models/unet_baseline.yaml
+    checkpoint:
+      root: asset
+      path: validation_checkpoints/baseline_seed42_best_val_loss.pth
+  - model: unet_baseline
+    seed: 123
+    model_config: configs/models/unet_baseline.yaml
+    checkpoint:
+      root: workspace
+      path: results/segmentation_training/unet_baseline/seed_123/best_model.pth
+  - model: unet_baseline
+    seed: 3407
+    model_config: configs/models/unet_baseline.yaml
+    checkpoint:
+      root: workspace
+      path: results/segmentation_training/unet_baseline/seed_3407/best_model.pth
+  - model: unet_noskip
+    seed: 42
+    model_config: configs/models/unet_noskip.yaml
+    checkpoint:
+      root: asset
+      path: validation_checkpoints/noskip_unet_seed42_best_val_loss.pth
+  - model: unet_noskip
+    seed: 123
+    model_config: configs/models/unet_noskip.yaml
+    checkpoint:
+      root: workspace
+      path: results/segmentation_training/unet_noskip/seed_123/best_model.pth
+  - model: unet_noskip
+    seed: 3407
+    model_config: configs/models/unet_noskip.yaml
+    checkpoint:
+      root: workspace
+      path: results/segmentation_training/unet_noskip/seed_3407/best_model.pth
+  - model: transunet_r50_vit_b16
+    seed: 42
+    model_config: configs/models/transunet_r50_vit_b16.yaml
+    checkpoint:
+      root: workspace
+      path: results/segmentation_training/transunet_r50_vit_b16/seed_42/best_model.pth
+  - model: transunet_r50_vit_b16
+    seed: 123
+    model_config: configs/models/transunet_r50_vit_b16.yaml
+    checkpoint:
+      root: workspace
+      path: results/segmentation_training/transunet_r50_vit_b16/seed_123/best_model.pth
+  - model: transunet_r50_vit_b16
+    seed: 3407
+    model_config: configs/models/transunet_r50_vit_b16.yaml
+    checkpoint:
+      root: workspace
+      path: results/segmentation_training/transunet_r50_vit_b16/seed_3407/best_model.pth

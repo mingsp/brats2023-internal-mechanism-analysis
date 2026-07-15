@@ -127,6 +127,17 @@ def test_build_adapter_rejects_unknown_model_name():
         build_adapter("unknown_unet")
 
 
+def test_adapter_exposes_only_declared_checkpoint_modules():
+    adapter = build_adapter("unet_baseline")
+
+    assert adapter.checkpoint_module("down1") is adapter.model.down1
+    assert adapter.randomization_module("down1") is adapter.model.down1
+    with pytest.raises(KeyError, match="Unknown checkpoint module"):
+        adapter.checkpoint_module("inc")
+    with pytest.raises(KeyError, match="Unknown randomization module"):
+        adapter.randomization_module("inc")
+
+
 def test_checkpoint_loader_accepts_raw_ordered_dict_and_returns_sha256(
     tmp_path: Path,
 ):

@@ -28,10 +28,16 @@ class HookedModelAdapter(ModelAdapter):
         self,
         model: nn.Module,
         modules: OrderedDict[str, nn.Module],
+        randomization_modules: OrderedDict[str, nn.Module] | None = None,
     ) -> None:
         super().__init__()
         self.model = model
         self._checkpoint_modules = modules
+        self._randomization_modules = (
+            modules if randomization_modules is None else randomization_modules
+        )
+        if tuple(self._randomization_modules) != tuple(modules):
+            raise ValueError("Randomization modules must match checkpoint names and order")
         self.checkpoint_names = tuple(modules)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -73,6 +79,18 @@ class HookedModelAdapter(ModelAdapter):
             ),
         )
 
+    def checkpoint_module(self, name: str) -> nn.Module:
+        try:
+            return self._checkpoint_modules[name]
+        except KeyError as exc:
+            raise KeyError(f"Unknown checkpoint module {name!r}") from exc
+
+    def randomization_module(self, name: str) -> nn.Module:
+        try:
+            return self._randomization_modules[name]
+        except KeyError as exc:
+            raise KeyError(f"Unknown randomization module {name!r}") from exc
+
     def load_checkpoint(
         self,
         path: str | Path,
@@ -109,7 +127,25 @@ def build_adapter(
             num_classes=num_classes,
             img_size=img_size,
         )
-        return HookedModelAdapter(transunet, checkpoint_modules(transunet))
+        hybrid = transunet.transformer.embeddings.hybrid_model
+        blocks = transunet.decoder.blocks
+        randomization_modules = OrderedDict(
+            (
+                ("down1", hybrid.root),
+                ("down2", hybrid.body.block1),
+                ("down3", hybrid.body.block2),
+                ("down4", transunet.decoder.conv_more),
+                ("up1", blocks[0]),
+                ("up2", blocks[1]),
+                ("up3", blocks[2]),
+                ("up4", blocks[3]),
+            )
+        )
+        return HookedModelAdapter(
+            transunet,
+            checkpoint_modules(transunet),
+            randomization_modules,
+        )
     try:
         model_type = builders[name]
     except KeyError as exc:

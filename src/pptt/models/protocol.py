@@ -17,6 +17,14 @@ class ModelAdapter(nn.Module, ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def checkpoint_module(self, name: str) -> nn.Module:
+        raise NotImplementedError
+
+    @abstractmethod
+    def randomization_module(self, name: str) -> nn.Module:
+        raise NotImplementedError
+
+    @abstractmethod
     def load_checkpoint(
         self,
         path: str | Path,
