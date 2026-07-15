@@ -36,7 +36,20 @@ def _run_text(command: list[str]) -> str:
 def _git_metadata(workspace: Path) -> tuple[str, bool]:
     commit = _run_text(["git", "-C", os.fspath(workspace), "rev-parse", "HEAD"])
     status = _run_text(["git", "-C", os.fspath(workspace), "status", "--porcelain"])
+    if commit.startswith("UNAVAILABLE:"):
+        raise RuntimeError(
+            "Git metadata is unavailable; provide --code-commit and --code-dirty"
+        )
     return commit, bool(status)
+
+
+def _parse_boolean(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes"}:
+        return True
+    if normalized in {"0", "false", "no"}:
+        return False
+    raise ValueError(f"Invalid boolean value: {value}")
 
 
 def _runtime_environment() -> dict[str, Any]:
@@ -111,6 +124,8 @@ def main() -> int:
         type=Path,
         default=Path("manifests/environment_lock.txt"),
     )
+    parser.add_argument("--code-commit")
+    parser.add_argument("--code-dirty", choices=("true", "false"))
     parser.add_argument("--verify", action="store_true")
     args = parser.parse_args()
 
@@ -137,7 +152,17 @@ def main() -> int:
         return 0
 
     environment = _runtime_environment()
-    commit, dirty = _git_metadata(workspace)
+    injected_commit = args.code_commit or os.environ.get("PPTT_CODE_COMMIT")
+    injected_dirty = args.code_dirty or os.environ.get("PPTT_CODE_DIRTY")
+    if injected_commit is None:
+        commit, dirty = _git_metadata(workspace)
+    else:
+        if injected_dirty is None:
+            raise ValueError(
+                "--code-dirty or PPTT_CODE_DIRTY is required with an injected commit"
+            )
+        commit = injected_commit
+        dirty = _parse_boolean(injected_dirty)
     inventory = build_result_inventory(
         workspace_root=workspace,
         asset_root=assets,
