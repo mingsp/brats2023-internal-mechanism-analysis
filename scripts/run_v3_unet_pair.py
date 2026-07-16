@@ -71,6 +71,13 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
+def _v1_admission_status(path: Path) -> str:
+    if not path.is_file():
+        return "MISSING_V1"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return "PASS" if payload.get("status") == "PASS" else "V1_NOT_PASSED"
+
+
 def _job_selector(value: str) -> str:
     model, separator, seed = value.rpartition(":")
     if not separator:
@@ -148,6 +155,27 @@ def _trace_patient(
         final_model_state=np.stack(final_model_state),
         slice_ids=tuple(record.slice_id for record in records),
     )
+
+
+def _trace_storage_payload(
+    trace: CaseTrace,
+    policy: dict[str, Any],
+) -> dict[str, Any]:
+    """Select persisted fields without changing the in-memory analysis trace."""
+    return {
+        "states": trace.states,
+        "reliable": trace.reliable,
+        "margins": (
+            trace.margins if bool(policy.get("retain_margins", False)) else None
+        ),
+        "truth": trace.truth,
+        "final_model_state": (
+            trace.final_model_state
+            if bool(policy.get("retain_final_model_state", True))
+            else None
+        ),
+        "slice_ids": trace.slice_ids,
+    }
 
 
 def _extend(
@@ -465,6 +493,13 @@ def _run_job(
     nodes = tuple(str(value) for value in experiment_config["nodes"])
     observer_seeds = tuple(int(value) for value in experiment_config["observer_seeds"])
     observer_directory = observer_root / job.model / f"seed_{job.seed}"
+    trace_storage_config = experiment_config.get("trace_storage", {})
+    trace_storage_policy = {
+        "retain_margins": bool(trace_storage_config.get("retain_margins", False)),
+        "retain_final_model_state": bool(
+            trace_storage_config.get("retain_final_model_state", True)
+        ),
+    }
     threshold = load_formal_reliability_threshold(observer_directory)
     observers = load_real_observer_path(
         observer_directory,
@@ -503,6 +538,7 @@ def _run_job(
         "observer_seeds": observer_seeds,
         "reliability_threshold": threshold,
         "trace_schema_version": 2,
+        "trace_storage": trace_storage_policy,
     }
     _prepare_job_manifest(
         job_output / "job_manifest.json",
@@ -537,12 +573,7 @@ def _run_job(
                 trace = _trace_patient(tracer, grouped[patient_id])
                 save_case_trace(
                     artifact_path,
-                    states=trace.states,
-                    reliable=trace.reliable,
-                    margins=trace.margins,
-                    truth=trace.truth,
-                    final_model_state=trace.final_model_state,
-                    slice_ids=trace.slice_ids,
+                    **_trace_storage_payload(trace, trace_storage_policy),
                 )
             summary = summarize_case_trace(
                 trace,
@@ -653,8 +684,9 @@ def main() -> int:
         if not job.checkpoint.is_file():
             statuses.append({"job": job_id, "status": "MISSING_CHECKPOINT"})
             continue
-        if not (observer_directory / "v1_status.json").is_file():
-            statuses.append({"job": job_id, "status": "MISSING_V1"})
+        v1_admission = _v1_admission_status(observer_directory / "v1_status.json")
+        if v1_admission != "PASS":
+            statuses.append({"job": job_id, "status": v1_admission})
             continue
         statuses.append(
             _run_job(

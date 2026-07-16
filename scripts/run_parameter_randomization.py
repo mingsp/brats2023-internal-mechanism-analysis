@@ -17,6 +17,7 @@ from pptt.data.brats2d import SliceRecord, discover_slice_records
 from pptt.data.patient_splits import patient_id_from_slice
 from pptt.experiments.model_matrix import ModelMatrixJob, load_model_matrix
 from pptt.experiments.pilot import paired_bootstrap_difference, stable_seed
+from pptt.hooks.checkpoints import checkpoint_sha256
 from pptt.models.adapters import build_adapter
 from pptt.observers.cache import build_observer_cache
 from pptt.observers.evaluation import (
@@ -32,6 +33,7 @@ from pptt.observers.linear import LinearObserver
 from pptt.observers.objective import class_balanced_pixel_weights
 from pptt.observers.randomization import (
     extract_randomized_node_features,
+    predict_frozen_observer_ensemble,
     randomize_checkpoint_module,
 )
 from pptt.observers.trainer import ObserverTrainingConfig, train_observer
@@ -123,6 +125,7 @@ def _build_randomized_caches(
     split_records: dict[str, dict[str, dict[str, SliceRecord]]],
     job_output: Path,
     observer_config: dict[str, Any],
+    splits: tuple[str, ...],
     device: torch.device,
     resume: bool,
 ) -> tuple[dict[str, list[Path]], dict[str, Any]]:
@@ -175,7 +178,7 @@ def _build_randomized_caches(
             )
     randomized_paths: dict[str, list[Path]] = {}
     extraction_seconds = 0.0
-    for split in ("train", "val", "test"):
+    for split in splits:
         source_paths = sorted((job_output / "cache" / split / "patients").glob("*.npz"))
         if not source_paths:
             raise FileNotFoundError(f"Original observer cache is absent for {job.job_id}/{split}")
@@ -214,6 +217,11 @@ def _build_randomized_caches(
     adapter.to("cpu")
     if device.type == "cuda":
         torch.cuda.empty_cache()
+    previous_extraction_seconds = (
+        float(existing_metadata.get("extraction_seconds", 0.0))
+        if existing_metadata is not None
+        else 0.0
+    )
     metadata = {
         "model": job.model,
         "model_seed": job.seed,
@@ -225,13 +233,18 @@ def _build_randomized_caches(
         "module_state_sha256_before": before_hash,
         "module_state_sha256_after": after_hash,
         "target": "original frozen model final probabilities at identical cached pixels",
-        "extraction_seconds": extraction_seconds,
+        "extraction_seconds": previous_extraction_seconds + extraction_seconds,
+        "available_cache_splits": sorted(
+            split
+            for split in ("train", "val", "test")
+            if (job_output / "parameter_randomization" / node / "cache" / split).is_dir()
+        ),
     }
     _write_json(metadata_path, metadata)
     return randomized_paths, metadata
 
 
-def _fit_and_evaluate_node(
+def _fit_and_evaluate_retrained_node(
     job: ModelMatrixJob,
     *,
     node: str,
@@ -407,6 +420,136 @@ def _fit_and_evaluate_node(
     }
 
 
+def _load_frozen_observers(
+    job_output: Path,
+    *,
+    node: str,
+    seeds: tuple[int, ...],
+) -> tuple[dict[int, LinearObserver], dict[str, str]]:
+    observers: dict[int, LinearObserver] = {}
+    hashes: dict[str, str] = {}
+    for seed in seeds:
+        state_path = job_output / "observers" / node / "real" / f"seed_{seed}.pt"
+        if not state_path.is_file():
+            raise FileNotFoundError(state_path)
+        state = torch.load(state_path, map_location="cpu")
+        weight = state.get("projection.weight")
+        if not isinstance(weight, torch.Tensor) or weight.ndim != 4:
+            raise ValueError(f"Invalid frozen observer state: {state_path}")
+        observer = LinearObserver(int(weight.shape[1]), int(weight.shape[0]))
+        observer.load_state_dict(state, strict=True)
+        observers[seed] = observer
+        hashes[f"seed_{seed}"] = checkpoint_sha256(state_path)
+    return observers, hashes
+
+
+def _evaluate_frozen_node(
+    job: ModelMatrixJob,
+    *,
+    node: str,
+    randomized_paths: dict[str, list[Path]],
+    observer_config: dict[str, Any],
+    original_quality: pd.DataFrame,
+    job_output: Path,
+    device: torch.device,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    seeds = tuple(int(value) for value in observer_config["observer_seeds"])
+    observers, observer_hashes = _load_frozen_observers(
+        job_output,
+        node=node,
+        seeds=seeds,
+    )
+    randomized_by_patient: dict[str, float] = {}
+    patient_rows: list[dict[str, Any]] = []
+    for path in randomized_paths["test"]:
+        patient = load_indexed_patient_cache(path)
+        ensemble = predict_frozen_observer_ensemble(
+            observers,
+            patient.features[node],
+            device=device,
+        )
+        metric = patient_probability_metrics(
+            patient.target_probabilities,
+            ensemble,
+            np.zeros(patient.row_count, dtype=np.int32),
+        )[0]
+        randomized_by_patient[patient.patient_id] = float(metric["mean_js_divergence"])
+
+    original = original_quality[
+        (original_quality.node == node)
+        & (original_quality.split == "test")
+        & (original_quality.control == "real")
+        & (original_quality.observer_seed == -1)
+        & (original_quality.scope == "overall")
+    ].set_index("patient_id")
+    patient_ids = sorted(randomized_by_patient)
+    if set(patient_ids) != set(original.index.tolist()):
+        raise ValueError(f"Original and randomized test patients differ at {node}")
+    original_values = np.asarray(
+        [float(original.loc[patient_id, "mean_js_divergence"]) for patient_id in patient_ids]
+    )
+    randomized_values = np.asarray(
+        [randomized_by_patient[patient_id] for patient_id in patient_ids]
+    )
+    statistics = observer_config.get("statistics", {})
+    estimate = paired_bootstrap_difference(
+        original_values,
+        randomized_values,
+        iterations=int(statistics.get("bootstrap_iterations", 10000)),
+        seed=stable_seed(
+            int(statistics.get("bootstrap_seed", 20260715)),
+            job.job_id,
+            node,
+            "parameter_randomization_frozen_observer",
+        ),
+    )
+    finite_observers = all(
+        torch.isfinite(parameter).all().item()
+        for observer in observers.values()
+        for parameter in observer.parameters()
+    )
+    passed = bool(
+        estimate.mean_difference > 0
+        and estimate.ci_low > 0
+        and finite_observers
+    )
+    for index, patient_id in enumerate(patient_ids):
+        patient_rows.append(
+            {
+                "model": job.model,
+                "model_seed": job.seed,
+                "node": node,
+                "patient_id": patient_id,
+                "control_mode": "frozen_observer",
+                "original_jsd": original_values[index],
+                "randomized_jsd": randomized_values[index],
+                "randomized_minus_original_jsd": (
+                    randomized_values[index] - original_values[index]
+                ),
+                "mean_difference": estimate.mean_difference,
+                "ci_low": estimate.ci_low,
+                "ci_high": estimate.ci_high,
+                "passed": passed,
+            }
+        )
+    for observer in observers.values():
+        observer.to("cpu")
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    return patient_rows, {
+        "node": node,
+        "status": "PASS" if passed else "FAIL",
+        "patient_count": len(patient_ids),
+        "control_mode": "frozen_observer",
+        "observer_refit": False,
+        "observer_state_sha256": observer_hashes,
+        "mean_randomized_minus_original_jsd": estimate.mean_difference,
+        "ci_low": estimate.ci_low,
+        "ci_high": estimate.ci_high,
+        "all_observers_finite": finite_observers,
+    }
+
+
 def _run_job(
     job: ModelMatrixJob,
     *,
@@ -415,6 +558,7 @@ def _run_job(
     observer_config: dict[str, Any],
     asset_root: Path,
     output_root: Path,
+    control_mode: str,
     device: torch.device,
     resume: bool,
 ) -> dict[str, Any]:
@@ -428,12 +572,21 @@ def _run_job(
     selected_nodes = (nodes[0], nodes[len(nodes) // 2 - 1], nodes[-1])
     if len(set(selected_nodes)) != 3:
         raise ValueError("Parameter randomization requires three distinct checkpoints")
-    selected_hyperparameters = json.loads(
-        (job_output / "selected_hyperparameters.json").read_text(encoding="utf-8")
+    selected_hyperparameters = (
+        json.loads(
+            (job_output / "selected_hyperparameters.json").read_text(encoding="utf-8")
+        )
+        if control_mode == "retrained_observer"
+        else None
+    )
+    required_splits = (
+        ("train", "val", "test")
+        if control_mode == "retrained_observer"
+        else ("test",)
     )
     split_records = {
         split: _records_by_patient(asset_root, data_config["splits"][split])
-        for split in ("train", "val", "test")
+        for split in required_splits
     }
     original_quality = pd.read_parquet(quality_path)
     patient_rows: list[dict[str, Any]] = []
@@ -446,34 +599,57 @@ def _run_job(
             split_records=split_records,
             job_output=job_output,
             observer_config=observer_config,
+            splits=required_splits,
             device=device,
             resume=resume,
         )
-        rows, report = _fit_and_evaluate_node(
-            job,
-            node=node,
-            randomized_paths=randomized_paths,
-            selected=selected_hyperparameters[node],
-            randomized_module_hash=metadata["module_state_sha256_after"],
-            observer_config=observer_config,
-            original_quality=original_quality,
-            job_output=job_output,
-            device=device,
-            resume=resume,
-        )
+        if control_mode == "frozen_observer":
+            rows, report = _evaluate_frozen_node(
+                job,
+                node=node,
+                randomized_paths=randomized_paths,
+                observer_config=observer_config,
+                original_quality=original_quality,
+                job_output=job_output,
+                device=device,
+            )
+        else:
+            if selected_hyperparameters is None:
+                raise RuntimeError("Retrained control lacks selected hyperparameters")
+            rows, report = _fit_and_evaluate_retrained_node(
+                job,
+                node=node,
+                randomized_paths=randomized_paths,
+                selected=selected_hyperparameters[node],
+                randomized_module_hash=metadata["module_state_sha256_after"],
+                observer_config=observer_config,
+                original_quality=original_quality,
+                job_output=job_output,
+                device=device,
+                resume=resume,
+            )
         patient_rows.extend(rows)
         node_reports.append({**metadata, **report})
-    destination = job_output / "parameter_randomization_sensitivity.parquet"
+    if control_mode == "frozen_observer":
+        destination = job_output / "parameter_randomization_frozen_sensitivity.parquet"
+        status_path = job_output / "parameter_randomization_frozen_status.json"
+        admission_role = "primary_faithfulness_gate"
+    else:
+        destination = job_output / "parameter_randomization_sensitivity.parquet"
+        status_path = job_output / "parameter_randomization_status.json"
+        admission_role = "diagnostic_random_feature_decodability"
     pd.DataFrame(patient_rows).to_parquet(destination, index=False)
     status = "PASS" if all(row["status"] == "PASS" for row in node_reports) else "FAIL"
     result = {
         "job": job.job_id,
         "status": status,
+        "control_mode": control_mode,
+        "admission_role": admission_role,
         "selected_nodes": selected_nodes,
         "nodes": node_reports,
         "output": destination,
     }
-    _write_json(job_output / "parameter_randomization_status.json", result)
+    _write_json(status_path, result)
     return result
 
 
@@ -492,6 +668,11 @@ def main() -> int:
     parser.add_argument("--asset-root", type=Path)
     parser.add_argument("--output-root", type=Path, default=Path("results/v1_observers"))
     parser.add_argument("--jobs", nargs="+")
+    parser.add_argument(
+        "--control-mode",
+        choices=("frozen_observer", "retrained_observer"),
+        default="frozen_observer",
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
@@ -501,18 +682,28 @@ def main() -> int:
         workspace_root=args.workspace_root.resolve(),
         asset_root_override=args.asset_root,
     )
+    observer_config = _load_yaml(args.config)
+    registered_model_seeds = tuple(
+        int(value)
+        for value in observer_config["controls"].get(
+            "parameter_randomization_model_seeds",
+            (42,),
+        )
+    )
     selected = (
         {_job_selector(value) for value in args.jobs}
         if args.jobs is not None
-        else {job.job_id for job in matrix.jobs if job.seed == 42}
+        else {job.job_id for job in matrix.jobs if job.seed in registered_model_seeds}
     )
     jobs = [job for job in matrix.jobs if job.job_id in selected]
     unknown = selected - {job.job_id for job in matrix.jobs}
     if unknown:
         raise ValueError(f"Unknown model matrix jobs: {sorted(unknown)}")
-    if any(job.seed != 42 for job in jobs):
-        raise ValueError("Parameter randomization is pre-registered for model seed 42 only")
-    observer_config = _load_yaml(args.config)
+    if any(job.seed not in registered_model_seeds for job in jobs):
+        raise ValueError(
+            "Parameter randomization is outside the registered model seeds: "
+            f"{registered_model_seeds}"
+        )
     data_config = _load_yaml(args.data_config)
     device = torch.device(args.device)
     results = []
@@ -528,6 +719,7 @@ def main() -> int:
                 observer_config=observer_config,
                 asset_root=matrix.asset_root,
                 output_root=args.output_root.resolve(),
+                control_mode=args.control_mode,
                 device=device,
                 resume=args.resume,
             )
@@ -536,10 +728,12 @@ def main() -> int:
         row["status"] == "PASS" for row in results
     )
     summary = {"status": "PASS" if complete else "INCOMPLETE", "jobs": results}
-    _write_json(
-        args.output_root.resolve() / "parameter_randomization_matrix_status.json",
-        summary,
+    matrix_name = (
+        "parameter_randomization_frozen_matrix_status.json"
+        if args.control_mode == "frozen_observer"
+        else "parameter_randomization_matrix_status.json"
     )
+    _write_json(args.output_root.resolve() / matrix_name, summary)
     print(json.dumps(_json_ready(summary), ensure_ascii=False, indent=2))
     return 0 if complete else 2
 

@@ -12,7 +12,9 @@ commands:
   v1_control_evaluation: >-
     .venv/bin/python scripts/run_v1_observer.py --matrix manifests/model_matrix.yaml --config configs/observers/default.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --output-root results/v1_observers --device cuda
   v1_parameter_randomization: >-
-    .venv/bin/python scripts/run_parameter_randomization.py --matrix manifests/model_matrix.yaml --config configs/observers/default.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --output-root results/v1_observers --resume --device cuda
+    .venv/bin/python scripts/run_parameter_randomization.py --matrix manifests/model_matrix.yaml --config configs/observers/default.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --output-root results/v1_observers --control-mode frozen_observer --resume --device cuda
+  v1_parameter_randomization_retrained_diagnostic: >-
+    .venv/bin/python scripts/run_parameter_randomization.py --matrix manifests/model_matrix.yaml --config configs/observers/default.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --output-root results/v1_observers --control-mode retrained_observer --resume --device cuda
   v3_unet_pair: >-
     .venv/bin/python scripts/run_v3_unet_pair.py --config configs/experiments/v3_unet_pair.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --resume --device cuda
   v4_locked_intervention: >-

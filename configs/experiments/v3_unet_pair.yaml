@@ -6,6 +6,9 @@ models: [unet_baseline, unet_noskip]
 model_seeds: [42, 123, 3407]
 observer_seeds: [17, 29, 43]
 nodes: [down1, down2, down3, down4, up1, up2, up3, up4]
+trace_storage:
+  retain_margins: false
+  retain_final_model_state: true
 discovery_split: val
 primary_split: test
 statistics:

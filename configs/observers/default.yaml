@@ -24,6 +24,7 @@ controls:
   spatial_shift_y: 40
   spatial_shift_x: 41
   parameter_randomization_seed: 20260716
+  parameter_randomization_model_seeds: [42]
 reliability:
   minimum_transition_consistency: 0.90
   minimum_class_retention: 0.50

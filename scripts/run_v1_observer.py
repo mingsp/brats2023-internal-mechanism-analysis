@@ -22,6 +22,7 @@ from pptt.observers.evaluation import predict_observer_probabilities
 from pptt.observers.full_cache import load_indexed_patient_cache
 from pptt.observers.linear import LinearObserver
 from pptt.observers.objective import mean_js_divergence
+from pptt.observers.randomization import parameter_randomization_admission
 
 
 CONTROL_NAMES = ("real", "patient_permutation", "spatial_shift")
@@ -486,20 +487,36 @@ def _evaluate_job(
                 failed[left].extend(reasons)
             if right in failed:
                 failed[right].extend(reasons)
-    parameter_report_path = output / "parameter_randomization_status.json"
-    if parameter_report_path.is_file():
-        parameter_report = json.loads(
-            parameter_report_path.read_text(encoding="utf-8")
+    frozen_report_path = output / "parameter_randomization_frozen_status.json"
+    retrained_report_path = output / "parameter_randomization_status.json"
+    frozen_report = (
+        json.loads(frozen_report_path.read_text(encoding="utf-8"))
+        if frozen_report_path.is_file()
+        else None
+    )
+    retrained_report = (
+        json.loads(retrained_report_path.read_text(encoding="utf-8"))
+        if retrained_report_path.is_file()
+        else None
+    )
+    registered_model_seeds = tuple(
+        int(value)
+        for value in observer_config["controls"].get(
+            "parameter_randomization_model_seeds",
+            (42,),
         )
-        parameter_randomization_status = str(parameter_report.get("status", "FAIL"))
-        for node_report in parameter_report.get("nodes", []):
-            node = str(node_report["node"])
-            if node_report.get("status") != "PASS" and node in failed:
-                failed[node].append(
-                    "checkpoint-local parameter randomization did not degrade readout"
-                )
-    else:
-        parameter_randomization_status = "PENDING"
+    )
+    randomization_admission = parameter_randomization_admission(
+        model_seed=model_seed,
+        registered_model_seeds=registered_model_seeds,
+        frozen_report=frozen_report,
+        retrained_report=retrained_report,
+    )
+    for node, reasons in randomization_admission.failed_nodes.items():
+        if node not in failed:
+            raise ValueError(f"Randomization report contains unknown node: {node}")
+        failed[node].extend(reasons)
+    parameter_randomization_status = randomization_admission.primary_status
     failed = {node: sorted(set(reasons)) for node, reasons in failed.items() if reasons}
 
     for split in splits:
@@ -600,7 +617,7 @@ def _evaluate_job(
         or parameter_randomization_status == "FAIL"
     ):
         status = "FAIL"
-    elif parameter_randomization_status == "PASS":
+    elif parameter_randomization_status in {"PASS", "NOT_APPLICABLE"}:
         status = "PASS"
     else:
         status = "PENDING_RANDOMIZATION"
@@ -613,6 +630,11 @@ def _evaluate_job(
         "restart_rows": len(restart_rows),
         "reliability": reliability_payload,
         "parameter_randomization_status": parameter_randomization_status,
+        "parameter_randomization_control_mode": "frozen_observer",
+        "parameter_randomization_registered_model_seeds": registered_model_seeds,
+        "retrained_randomization_diagnostic_status": (
+            randomization_admission.retrained_diagnostic_status
+        ),
     }
     _write_json(output / "v1_status.json", result)
     return result
