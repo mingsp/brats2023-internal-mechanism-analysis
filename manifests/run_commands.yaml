@@ -21,6 +21,52 @@ commands:
     .venv/bin/python scripts/run_v4_intervention.py --config configs/experiments/v4_up4_intervention.yaml --trigger results/v3_unet_pair/v4_trigger.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --resume --device cuda
   v5_transunet_transfer: >-
     .venv/bin/python scripts/run_v5_transunet.py --config configs/experiments/v5_transunet.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --resume --device cuda
+  process_effect_gate: >-
+    .venv/bin/python scripts/run_process_effect_gate.py --workspace-root . --config configs/experiments/process_effect_gate.yaml
+  v6_protocol_lock: >-
+    .venv/bin/python scripts/lock_v6_causal_protocol.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml --lock-filename v6_protocol_lock_v2.json --supersedes-lock results/v6_pixel_transition_causal/v6_protocol_lock.json
+  v6_causal_seed_42: >-
+    .venv/bin/python scripts/run_v6_pixel_transition_causal.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml --protocol-lock results/v6_pixel_transition_causal/v6_protocol_lock_v2.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --model-seed 42 --resume --device cuda
+  v6_causal_seed_123: >-
+    .venv/bin/python scripts/run_v6_pixel_transition_causal.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml --protocol-lock results/v6_pixel_transition_causal/v6_protocol_lock_v2.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --model-seed 123 --resume --device cuda
+  v6_causal_seed_3407: >-
+    .venv/bin/python scripts/run_v6_pixel_transition_causal.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml --protocol-lock results/v6_pixel_transition_causal/v6_protocol_lock_v2.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --model-seed 3407 --resume --device cuda
+  v6_causal_summary: >-
+    .venv/bin/python scripts/summarize_v6_causal.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml
+  v6_representative_case: >-
+    .venv/bin/python scripts/export_v6_causal_case.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml --protocol-lock results/v6_pixel_transition_causal/v6_protocol_lock_v2.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --device cuda
+  v7_protocol_lock: >-
+    .venv/bin/python scripts/lock_v7_network_alignment_protocol.py --workspace-root . --config configs/experiments/v7_network_process_intervention_alignment.yaml --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data
+  v7_network_alignment_seed_42_baseline: >-
+    .venv/bin/python scripts/run_v7_network_alignment.py --workspace-root . --config configs/experiments/v7_network_process_intervention_alignment.yaml --protocol-lock results/v7_network_process_intervention_alignment/v7_protocol_lock.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --model unet_baseline --model-seed 42 --execution-mode formal --resume --device cuda
+  v7_network_alignment_seed_42_noskip: >-
+    .venv/bin/python scripts/run_v7_network_alignment.py --workspace-root . --config configs/experiments/v7_network_process_intervention_alignment.yaml --protocol-lock results/v7_network_process_intervention_alignment/v7_protocol_lock.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --model unet_noskip --model-seed 42 --execution-mode formal --resume --device cuda
+  v7_network_alignment_seed_123_baseline: >-
+    .venv/bin/python scripts/run_v7_network_alignment.py --workspace-root . --config configs/experiments/v7_network_process_intervention_alignment.yaml --protocol-lock results/v7_network_process_intervention_alignment/v7_protocol_lock.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --model unet_baseline --model-seed 123 --execution-mode formal --resume --device cuda
+  v7_network_alignment_seed_123_noskip: >-
+    .venv/bin/python scripts/run_v7_network_alignment.py --workspace-root . --config configs/experiments/v7_network_process_intervention_alignment.yaml --protocol-lock results/v7_network_process_intervention_alignment/v7_protocol_lock.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --model unet_noskip --model-seed 123 --execution-mode formal --resume --device cuda
+  v7_network_alignment_seed_3407_baseline: >-
+    .venv/bin/python scripts/run_v7_network_alignment.py --workspace-root . --config configs/experiments/v7_network_process_intervention_alignment.yaml --protocol-lock results/v7_network_process_intervention_alignment/v7_protocol_lock.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --model unet_baseline --model-seed 3407 --execution-mode formal --resume --device cuda
+  v7_network_alignment_seed_3407_noskip: >-
+    .venv/bin/python scripts/run_v7_network_alignment.py --workspace-root . --config configs/experiments/v7_network_process_intervention_alignment.yaml --protocol-lock results/v7_network_process_intervention_alignment/v7_protocol_lock.json --asset-root /root/autodl-tmp/A_scheme_workspace/brats2023_data --model unet_noskip --model-seed 3407 --execution-mode formal --resume --device cuda
+  v7_network_alignment_summary: >-
+    .venv/bin/python scripts/summarize_v7_network_alignment.py --workspace-root . --config configs/experiments/v7_network_process_intervention_alignment.yaml --protocol-lock results/v7_network_process_intervention_alignment/v7_protocol_lock.json
+  main_figure_1_english: >-
+    .venv/bin/python scripts/make_pptt_method_figure.py --workspace-root . --language en --dpi 600
+  main_figure_1_chinese: >-
+    .venv/bin/python scripts/make_pptt_method_figure.py --workspace-root . --language zh --dpi 600
+  main_figure_2_english: >-
+    .venv/bin/python scripts/make_network_pixel_fate_figure.py --workspace-root . --language en --dpi 600
+  main_figure_2_chinese: >-
+    .venv/bin/python scripts/make_network_pixel_fate_figure.py --workspace-root . --language zh --dpi 600
+  main_figure_3_english: >-
+    .venv/bin/python scripts/make_network_alignment_figure.py --workspace-root . --language en --dpi 600
+  main_figure_3_chinese: >-
+    .venv/bin/python scripts/make_network_alignment_figure.py --workspace-root . --language zh --dpi 600
+  supplementary_v6_causal_english: >-
+    .venv/bin/python scripts/make_v6_causal_figure.py --workspace-root . --language en --dpi 600
+  supplementary_v6_causal_chinese: >-
+    .venv/bin/python scripts/make_v6_causal_figure.py --workspace-root . --language zh --dpi 600
   figures_english: >-
     .venv/bin/python scripts/make_paper_figures.py --results-root results --language en --dpi 400
   figures_chinese: >-

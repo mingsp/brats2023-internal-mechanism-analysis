@@ -1,0 +1,49 @@
+name: v6_pixel_transition_causal_tracing
+model_matrix: manifests/model_matrix.yaml
+observer_root: results/v1_observers
+v3_root: results/v3_unet_pair
+process_effect_root: results/process_effect_gate
+output_root: results/v6_pixel_transition_causal
+models:
+  causal: unet_baseline
+  negative_control: unet_noskip
+model_seeds: [42, 123, 3407]
+observer_seeds: [17, 29, 43]
+nodes: [down1, down2, down3, down4, up1, up2, up3, up4]
+discovery_split: val
+primary_split: test
+target:
+  transition: up1->up2
+  transition_index: 4
+  module: up2
+  argument_index: 1
+  source: down2
+  truth_classes: [1, 2, 3]
+  require_reliable_transition: true
+eligibility:
+  minimum_target_pixels_on_selected_slice: 32
+  minimum_target_feature_positions: 8
+  minimum_control_feature_positions: 8
+intervention:
+  corruption: spatial_roll_full_skip_path
+  feature_shift_yx: [2, 2]
+  restoration_alphas: [0.25, 0.50, 0.75, 1.00]
+  primary_alpha: 1.00
+  restore_logit_tolerance: 1.0e-6
+matching:
+  same_dominant_truth_class: true
+  boundary_bin_edges: [1.5, 3.5, 7.5]
+  activation_norm_quantile_bins: 4
+  without_replacement: true
+statistics:
+  bootstrap_iterations: 10000
+  bootstrap_seed: 20260717
+  alpha: 0.05
+  multiplicity: holm_primary_causal_family
+  minimum_supported_model_seeds: 2
+  minimum_standardized_effect: 0.8
+protocol:
+  lock_before_first_intervention_forward: true
+  thresholds_may_not_be_changed_after_lock: true
+  global_two_metric_gate_must_remain_reported: true
+  amendment_reason: formal_v3_observer_seed_identity_correction_before_first_intervention

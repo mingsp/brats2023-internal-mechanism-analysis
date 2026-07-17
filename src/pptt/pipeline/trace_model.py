@@ -18,6 +18,7 @@ class SlicePathTrace:
     margins: np.ndarray
     truth: np.ndarray
     final_model_state: np.ndarray
+    final_logits: np.ndarray | None = None
 
 
 def _observer_from_state(path: Path) -> LinearObserver:
@@ -141,4 +142,11 @@ class ObserverPathTracer:
             margins=canonical_margins.astype(np.float32, copy=False),
             truth=truth_array.astype(np.uint8, copy=False),
             final_model_state=final_model_state.astype(np.uint8, copy=False),
+            final_logits=(
+                model_trace.logits[0]
+                .detach()
+                .cpu()
+                .numpy()
+                .astype(np.float32, copy=False)
+            ),
         )

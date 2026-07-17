@@ -17,8 +17,8 @@ checkpoint_nodes:
   - up4
 training:
   epochs: 100
-  batch_size: 8
-  effective_batch_size: 8
+  batch_size: 76
+  effective_batch_size: 76
   batch_size_status: locked
   memory_profile: results/training_resource/transunet_batch_profile.json
   memory_limit_gib: 20

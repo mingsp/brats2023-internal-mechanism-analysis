@@ -16,9 +16,11 @@ initialization:
   mode: scratch
 training:
   epochs: 100
-  batch_size: 2
-  effective_batch_size: 2
+  batch_size: 88
+  effective_batch_size: 88
   batch_size_status: locked
+  memory_profile: results/training_resource/unet_baseline_batch_profile.json
+  memory_limit_gib: 20
   learning_rate: 3.0e-4
   weight_decay: 0.01
   eta_min: 1.0e-6

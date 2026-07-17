@@ -8,6 +8,7 @@ __pycache__/
 htmlcov/
 results/
 logs/
+manifests/v7_source_identity.json
 
 # Virtual environments and package builds
 .venv/

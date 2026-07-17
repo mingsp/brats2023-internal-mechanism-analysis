@@ -2,7 +2,7 @@
 
 ## 1. 固定范围
 
-本仓库实现像素预测状态转移追踪（Pixel Prediction Transition Tracing, PPTT）。核心输出包括节点预测状态、相邻节点转移场、类别转移张量、性能变化精确重构、持续状态流、最终决定深度、首次正确深度和错误起源深度。CAM、LayerCAM 与相邻硬掩膜仅用于 V2 独立比较，不参与 PPTT 状态定义。
+本仓库实现像素预测状态转移追踪（Pixel Prediction Transition Tracing, PPTT）。核心输出包括节点预测状态、相邻节点转移场、类别转移张量、性能变化精确重构、持续状态流、最终决定深度、首次正确深度和错误起源深度。候选过程经独立数据划分选择后，可进一步通过像素转移因果追踪检验指定结构变量对持续纠正事件的必要性、恢复性、区域特异性和剂量关系。CAM、LayerCAM 与相邻硬掩膜仅用于 V2 独立比较，不参与 PPTT 状态定义。
 
 服务器工作区为 `/root/autodl-tmp/A_scheme_workspace/pptt_process_xai_workspace`，资产根目录为 `/root/autodl-tmp/A_scheme_workspace/brats2023_data`。每次正式运行的代码提交、配置哈希和环境信息由结果清单登记，不在本文档中固定为易失效的单一提交号。
 
@@ -59,24 +59,40 @@ python -m venv --system-site-packages .venv
 .venv/bin/python scripts/run_v3_unet_pair.py --config configs/experiments/v3_unet_pair.yaml --asset-root "$PPTT_ASSET_ROOT" --resume --device cuda
 .venv/bin/python scripts/run_v4_intervention.py --config configs/experiments/v4_up4_intervention.yaml --trigger results/v3_unet_pair/v4_trigger.json --asset-root "$PPTT_ASSET_ROOT" --resume --device cuda
 .venv/bin/python scripts/run_v5_transunet.py --config configs/experiments/v5_transunet.yaml --asset-root "$PPTT_ASSET_ROOT" --resume --device cuda
+.venv/bin/python scripts/run_process_effect_gate.py --workspace-root . --config configs/experiments/process_effect_gate.yaml
+.venv/bin/python scripts/run_v6_pixel_transition_causal.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml --protocol-lock results/v6_pixel_transition_causal/v6_protocol_lock_v2.json --asset-root "$PPTT_ASSET_ROOT" --model-seed 42 --resume --device cuda
+.venv/bin/python scripts/run_v6_pixel_transition_causal.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml --protocol-lock results/v6_pixel_transition_causal/v6_protocol_lock_v2.json --asset-root "$PPTT_ASSET_ROOT" --model-seed 123 --resume --device cuda
+.venv/bin/python scripts/run_v6_pixel_transition_causal.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml --protocol-lock results/v6_pixel_transition_causal/v6_protocol_lock_v2.json --asset-root "$PPTT_ASSET_ROOT" --model-seed 3407 --resume --device cuda
+.venv/bin/python scripts/summarize_v6_causal.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml
+.venv/bin/python scripts/export_v6_causal_case.py --workspace-root . --config configs/experiments/v6_pixel_transition_causal_tracing.yaml --protocol-lock results/v6_pixel_transition_causal/v6_protocol_lock_v2.json --asset-root "$PPTT_ASSET_ROOT" --device cuda
 ~~~
 
 第一次 V1 汇总允许在冻结观察器控制尚未生成时返回 `PENDING_RANDOMIZATION`，用于审查其余观察器控制。参数随机化主控制只在预注册的 seed 42 上运行，固定原观察器并仅随机化所检验的网络模块；其数学定义、原重训诊断结果和输出契约见 `docs/parameter_randomization_protocol_amendment_cn.md`。旧的随机化后重训观察器结果保留为诊断，不参与 V1 门控。只有第二次 V1 汇总的正式矩阵状态为 `PASS` 时才能运行 V3；V3 同时逐作业读取 `v1_status.json` 并硬性要求 `PASS`，状态缺失、失败或待定的作业均不执行轨迹分析。
 
 V3 在内存中使用完整观察器 margin 计算预注册可靠性掩膜，但患者轨迹只持久化离散节点状态、可靠性掩膜、真值、最终模型状态和切片标识。margin 浮点图不参与 V3 任一统计量，且可由锁定权重、观察器和阈值重新计算；不持久化该冗余张量不会改变状态转移、指标重构或患者级统计。该策略由 `trace_storage` 配置和作业清单共同锁定。
 
-V4 仅在 V3 预注册触发条件成立时运行，未触发时只生成 `NOT_TRIGGERED.json`。V5 只检验接口迁移和过程输出完整性，不要求复制 U-Net 曲线。
+V4 仅在 V3 对固定候选 `up3->up4` 的预注册触发条件成立时运行，未触发时只生成 `NOT_TRIGGERED.json`。正式结果中 V4 为 `NOT_TRIGGERED`，不得更换候选转移或降低阈值。V5 只检验接口迁移和过程输出完整性，不要求复制 U-Net 曲线。
+
+V6 是与 V4 分开的候选特异性检验。全局双指标门控仍记录为失败；V6 只针对验证集上跨三个种子通过大效应门控的 `up1->up2` 持续净恢复，检验 `up2` 接收的 `down2` 空间对齐特征。候选、模型种子、测试患者、空间干预、恢复剂量、匹配规则、统计阈值和多重检验均在首次干预前写入 `v6_protocol_lock_v2.json`。该锁仅在首次干预前修正观察器种子身份，并保留被替代锁的路径、哈希和修订原因。正式重放必须直接使用该锁；不得由干预结果重选路径、阈值或病例。
 
 ## 6. 图件与结果清单
 
 ~~~bash
 .venv/bin/python scripts/make_paper_figures.py --results-root results --language en --dpi 400
 .venv/bin/python scripts/make_paper_figures.py --results-root results --language zh --dpi 400
+.venv/bin/python scripts/make_pptt_method_figure.py --workspace-root . --language en --dpi 600
+.venv/bin/python scripts/make_pptt_method_figure.py --workspace-root . --language zh --dpi 600
+.venv/bin/python scripts/make_flagship_process_figure.py --workspace-root . --language en --dpi 600
+.venv/bin/python scripts/make_flagship_process_figure.py --workspace-root . --language zh --dpi 600
+.venv/bin/python scripts/make_v6_causal_figure.py --workspace-root . --language en --dpi 600
+.venv/bin/python scripts/make_v6_causal_figure.py --workspace-root . --language zh --dpi 600
 PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data \
   .venv/bin/python scripts/build_result_inventory.py
 PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data \
   .venv/bin/python scripts/build_result_inventory.py --verify
 ~~~
+
+主文图固定为三组：图 1 定义 PPTT 的计算流程，图 2 展示相近终点下的全路径过程差异，图 3 展示锁定路径的破坏、恢复、区域特异性和剂量关系。`make_paper_figures.py` 生成的其余图件作为补充材料候选，不得替代三张主图的科学问题。
 
 `manifests/result_inventory.json` 记录代码 commit、环境、运行命令、配置哈希、数据清单、模型权重、输出表行数、图件大小和所有结果文件 SHA-256。含 `smoke`、`debug`、`overfit`、`preflight`、`resume_check` 或 `dry_run` 的产物自动标为非正式结果。
 

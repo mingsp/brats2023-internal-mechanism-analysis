@@ -1,0 +1,43 @@
+name: v7_network_process_intervention_alignment
+model_matrix: manifests/model_matrix.yaml
+observer_root: results/v1_observers
+v3_root: results/v3_unet_pair
+output_root: results/v7_network_process_intervention_alignment
+models: [unet_baseline, unet_noskip]
+model_seeds: [42, 123, 3407]
+observer_seeds: [17, 29, 43]
+nodes: [down1, down2, down3, down4, up1, up2, up3, up4]
+primary_split: test
+truth_classes: [1, 2, 3]
+process_event: output_anchored_persistent_correction
+eligibility:
+  minimum_union_pixels_on_selected_slice: 32
+  minimum_transition_pixels: 8
+  minimum_target_feature_positions: 4
+  minimum_control_feature_positions: 4
+  minimum_patients_per_transition: 30
+  minimum_aggregate_pixels_per_transition: 2048
+intervention:
+  root_node: down1
+  operator: spatial_roll_module_output
+  input_equivalent_shift_yx: [8, 8]
+  restore_nodes: [down2, down3, down4, up1, up2, up3, up4]
+  logit_tolerance: 1.0e-6
+matching:
+  same_dominant_truth_class: true
+  boundary_bin_edges: [1.5, 3.5, 7.5]
+  activation_norm_quantile_bins: 4
+  without_replacement: true
+statistics:
+  bootstrap_iterations: 10000
+  bootstrap_seed: 20260717
+  alpha: 0.05
+  multiplicity: holm_global_macro_micro
+  minimum_supported_seeds: 2
+  minimum_evaluable_transitions: 5
+  minimum_positive_receiving_transitions: 4
+protocol:
+  lock_before_test_intervention: true
+  thresholds_may_not_change_after_lock: true
+  v4_must_remain_not_triggered: true
+  v6_must_remain_candidate_specific: true

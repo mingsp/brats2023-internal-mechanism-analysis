@@ -1,0 +1,30 @@
+name: process_effect_gate
+v3_root: results/v3_unet_pair
+output_root: results/process_effect_gate
+models:
+  reference: unet_baseline
+  comparator: unet_noskip
+model_seeds: [42, 123, 3407]
+nodes: [down1, down2, down3, down4, up1, up2, up3, up4]
+truth_classes: [1, 2, 3]
+primary_split: test
+discovery_split: val
+middle_damage_transitions: [down3->down4, down4->up1]
+late_persistent_transitions: [up1->up2, up2->up3, up3->up4]
+candidate_decoder_transitions: [down4->up1, up1->up2, up2->up3, up3->up4]
+candidate_path_map:
+  down4->up1: {module: up1, argument_index: 1, source: down3}
+  up1->up2: {module: up2, argument_index: 1, source: down2}
+  up2->up3: {module: up3, argument_index: 1, source: down1}
+  up3->up4: {module: up4, argument_index: 1, source: inc}
+statistics:
+  bootstrap_iterations: 10000
+  bootstrap_seed: 20260717
+  multiplicity: holm_all_primary_tests
+gate:
+  minimum_supported_seeds: 2
+  alpha: 0.05
+  minimum_standardized_effect: 0.8
+representative_case:
+  maximum_absolute_terminal_difference: 0.05
+  lesion_area_quantiles: [0.25, 0.75]
