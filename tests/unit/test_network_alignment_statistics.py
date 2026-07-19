@@ -3,11 +3,26 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from scripts.summarize_v7_network_alignment import _write_parquet_without_attrs
+
 from pptt.statistics.network_alignment import (
     compute_global_alignment_statistics,
     evaluate_network_alignment_gate,
     summarize_alignment_cells,
 )
+
+
+def test_parquet_storage_drops_nonserializable_dataframe_attrs(tmp_path):
+    frame = pd.DataFrame({"value": [1.0, 2.0]})
+    frame.attrs["patient_values"] = pd.DataFrame({"patient_id": ["case-1"]})
+    path = tmp_path / "statistics.parquet"
+
+    _write_parquet_without_attrs(frame, path)
+
+    stored = pd.read_parquet(path)
+    assert stored.to_dict(orient="list") == {"value": [1.0, 2.0]}
+    assert stored.attrs == {}
+    assert "patient_values" in frame.attrs
 
 
 def _receiving_map(count: int = 7) -> dict[str, str]:

@@ -2,7 +2,7 @@
 
 ## 1. 固定范围
 
-本仓库实现像素预测状态转移追踪（Pixel Prediction Transition Tracing, PPTT）。核心输出包括节点预测状态、相邻节点转移场、类别转移张量、性能变化精确重构、持续状态流、最终决定深度、首次正确深度和错误起源深度。候选过程经独立数据划分选择后，可进一步通过像素转移因果追踪检验指定结构变量对持续纠正事件的必要性、恢复性、区域特异性和剂量关系。CAM、LayerCAM 与相邻硬掩膜仅用于 V2 独立比较，不参与 PPTT 状态定义。
+本仓库实现像素预测状态转移追踪（Pixel Prediction Transition Tracing, PPTT）。核心输出包括节点预测状态、相邻节点转移场、类别转移张量、性能变化精确重构、持续状态流、最终决定深度、首次正确深度和错误起源深度。候选过程经独立数据划分选择后，可通过像素转移因果追踪检验指定结构变量的必要性、恢复性、区域特异性和剂量关系；全网络扫描进一步在 7 个过程区间与 7 个恢复节点上审计干预响应和覆盖。CAM、LayerCAM 与相邻硬掩膜仅用于 V2 独立比较，不参与 PPTT 状态定义。
 
 服务器工作区为 `/root/autodl-tmp/A_scheme_workspace/pptt_process_xai_workspace`，资产根目录为 `/root/autodl-tmp/A_scheme_workspace/brats2023_data`。每次正式运行的代码提交、配置哈希和环境信息由结果清单登记，不在本文档中固定为易失效的单一提交号。
 
@@ -75,6 +75,35 @@ V4 仅在 V3 对固定候选 `up3->up4` 的预注册触发条件成立时运行�
 
 V6 是与 V4 分开的候选特异性检验。全局双指标门控仍记录为失败；V6 只针对验证集上跨三个种子通过大效应门控的 `up1->up2` 持续净恢复，检验 `up2` 接收的 `down2` 空间对齐特征。候选、模型种子、测试患者、空间干预、恢复剂量、匹配规则、统计阈值和多重检验均在首次干预前写入 `v6_protocol_lock_v2.json`。该锁仅在首次干预前修正观察器种子身份，并保留被替代锁的路径、哈希和修订原因。正式重放必须直接使用该锁；不得由干预结果重选路径、阈值或病例。
 
+V7 在首次 test 干预前锁定完整的 7×7 过程—恢复节点矩阵。先生成协议锁，再并行运行六个模型—种子作业，最后统一汇总：
+
+~~~bash
+.venv/bin/python scripts/lock_v7_network_alignment_protocol.py \
+  --workspace-root . \
+  --config configs/experiments/v7_network_process_intervention_alignment.yaml \
+  --asset-root "$PPTT_ASSET_ROOT"
+
+for model in unet_baseline unet_noskip; do
+  for seed in 42 123 3407; do
+    .venv/bin/python scripts/run_v7_network_alignment.py \
+      --workspace-root . \
+      --config configs/experiments/v7_network_process_intervention_alignment.yaml \
+      --protocol-lock results/v7_network_process_intervention_alignment/v7_protocol_lock.json \
+      --asset-root "$PPTT_ASSET_ROOT" \
+      --model "$model" --model-seed "$seed" \
+      --execution-mode formal --resume --device cuda &
+  done
+done
+wait
+
+.venv/bin/python scripts/summarize_v7_network_alignment.py \
+  --workspace-root . \
+  --config configs/experiments/v7_network_process_intervention_alignment.yaml \
+  --protocol-lock results/v7_network_process_intervention_alignment/v7_protocol_lock.json
+~~~
+
+正式结果必须为六作业各 250 名患者、每名患者 49 个单元。当前门控结果为 `INSUFFICIENT_NETWORK_COVERAGE`；该状态是正式结果，不得降低覆盖阈值或更换过程群。首次汇总曾因 Pandas 尝试序列化 DataFrame 属性而在写表阶段停止；修复只让 Parquet 存储副本清空 `attrs`，不改变数值列。锁定提交、原错误、修订范围和正式结果哈希见 `v7_postprocessing_amendment.json`。
+
 ## 6. 图件与结果清单
 
 ~~~bash
@@ -82,8 +111,10 @@ V6 是与 V4 分开的候选特异性检验。全局双指标门控仍记录为�
 .venv/bin/python scripts/make_paper_figures.py --results-root results --language zh --dpi 400
 .venv/bin/python scripts/make_pptt_method_figure.py --workspace-root . --language en --dpi 600
 .venv/bin/python scripts/make_pptt_method_figure.py --workspace-root . --language zh --dpi 600
-.venv/bin/python scripts/make_flagship_process_figure.py --workspace-root . --language en --dpi 600
-.venv/bin/python scripts/make_flagship_process_figure.py --workspace-root . --language zh --dpi 600
+.venv/bin/python scripts/make_network_pixel_fate_figure.py --workspace-root . --language en --dpi 600
+.venv/bin/python scripts/make_network_pixel_fate_figure.py --workspace-root . --language zh --dpi 600
+.venv/bin/python scripts/make_network_alignment_figure.py --workspace-root . --language en --dpi 600
+.venv/bin/python scripts/make_network_alignment_figure.py --workspace-root . --language zh --dpi 600
 .venv/bin/python scripts/make_v6_causal_figure.py --workspace-root . --language en --dpi 600
 .venv/bin/python scripts/make_v6_causal_figure.py --workspace-root . --language zh --dpi 600
 PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data \
@@ -92,9 +123,9 @@ PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data \
   .venv/bin/python scripts/build_result_inventory.py --verify
 ~~~
 
-主文图固定为三组：图 1 定义 PPTT 的计算流程，图 2 展示相近终点下的全路径过程差异，图 3 展示锁定路径的破坏、恢复、区域特异性和剂量关系。`make_paper_figures.py` 生成的其余图件作为补充材料候选，不得替代三张主图的科学问题。
+主文图固定为三组：图 1 定义 PPTT 的计算流程，图 2 展示相近终点下的全路径过程差异，图 3 展示完整 7×7 过程—恢复节点矩阵、反事实病例和宏微效应。V6 候选路径图与 `make_paper_figures.py` 生成的其余图件作为补充材料候选。图 3 的灰色单元表示不可评估，不得改绘为零。
 
-`manifests/result_inventory.json` 记录代码 commit、环境、运行命令、配置哈希、数据清单、模型权重、输出表行数、图件大小和所有结果文件 SHA-256。含 `smoke`、`debug`、`overfit`、`preflight`、`resume_check` 或 `dry_run` 的产物自动标为非正式结果。
+`manifests/result_inventory.json` 记录代码 commit、环境、运行命令、配置哈希、数据清单、模型权重、输出表行数、图件大小和所有结果文件 SHA-256。服务器目录不含 Git 元数据时，必须从协议锁注入 `--code-commit` 和 `--code-dirty false`；不得伪造提交。含 `smoke`、`debug`、`overfit`、`preflight`、`resume_check` 或 `dry_run` 的产物自动标为非正式结果。当前清单包含 6,639 个产物并通过内容寻址复核。
 
 ## 7. 结果同步
 

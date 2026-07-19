@@ -92,6 +92,13 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
             temporary.unlink(missing_ok=True)
 
 
+def _write_parquet_without_attrs(frame: pd.DataFrame, path: Path) -> None:
+    """Persist numerical columns without serializing in-memory DataFrame objects."""
+    stored = frame.copy(deep=False)
+    stored.attrs = {}
+    stored.to_parquet(path, index=False)
+
+
 def _validate_operator_audit(patient: Mapping[str, Any]) -> bool:
     if patient.get("status") == "INELIGIBLE_UNION_PIXELS":
         return True
@@ -280,11 +287,18 @@ def main() -> int:
         alpha=float(statistics["alpha"]),
     )
 
-    patient_cells.to_parquet(output_root / "network_alignment_patient_cells.parquet", index=False)
-    cell_summary.to_parquet(output_root / "network_alignment_cell_summary.parquet", index=False)
-    patient_global.to_parquet(output_root / "network_alignment_patient_global.parquet", index=False)
-    global_statistics.to_parquet(
-        output_root / "network_alignment_global_statistics.parquet", index=False
+    _write_parquet_without_attrs(
+        patient_cells, output_root / "network_alignment_patient_cells.parquet"
+    )
+    _write_parquet_without_attrs(
+        cell_summary, output_root / "network_alignment_cell_summary.parquet"
+    )
+    _write_parquet_without_attrs(
+        patient_global, output_root / "network_alignment_patient_global.parquet"
+    )
+    _write_parquet_without_attrs(
+        global_statistics,
+        output_root / "network_alignment_global_statistics.parquet",
     )
     _write_json_atomic(output_root / "v7_conclusion_gate.json", gate)
     full_audit = {

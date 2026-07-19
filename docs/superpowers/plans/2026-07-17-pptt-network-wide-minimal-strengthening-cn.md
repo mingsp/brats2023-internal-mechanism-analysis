@@ -945,7 +945,7 @@ Run: `.venv/bin/python -m pytest tests/integration/test_network_alignment_smoke.
 
 Expected: PASS。
 
-- [ ] **Step 5: 在服务器运行一个非正式真实病例 smoke**
+- [x] **Step 5: 在服务器运行一个非正式真实病例 smoke**
 
 Run:
 
@@ -1051,7 +1051,7 @@ Expected: 所有核心测试 PASS；仅 Linux 不适用的 Windows junction 用�
 
 选择函数固定返回过程向量最接近队列中位数的患者；测试需验证极端最大效应病例不会被选择，编号并列规则稳定。
 
-- [ ] **Step 3: 生成新版图 2 和图 3**
+- [x] **Step 3: 生成新版图 2 和图 3**
 
 Run:
 
@@ -1077,7 +1077,7 @@ Expected: PASS。
 - Modify after completion: `docs/reproducibility_cn.md`
 - Modify after completion: `manifests/result_inventory.json`
 
-- [ ] **Step 1: 锁定正式协议**
+- [x] **Step 1: 锁定正式协议**
 
 Run:
 
@@ -1090,7 +1090,7 @@ Run:
 
 Expected: `v7_protocol_lock.json` 状态为 `LOCKED_BEFORE_TEST_INTERVENTION`，`formal_intervention_authorized=true`。
 
-- [ ] **Step 2: 并行启动 6 个独立作业**
+- [x] **Step 2: 并行启动 6 个独立作业**
 
 该运行预计超过 2 小时，实施时把以下完整命令交由用户在服务器控制台启动；不得在未确认前擅自长跑。
 
@@ -1113,7 +1113,7 @@ done
 
 六作业并行前必须通过显存 smoke；若 24 GB 无法稳定容纳六进程，保持协议不变，仅将调度器并发数降为 2 或 3。并发数不是方法参数，不改变正式结果。运行器的 `.run.lock` 必须阻止重复启动同一模型—种子作业。
 
-- [ ] **Step 3: 汇总与门控**
+- [x] **Step 3: 汇总与门控**
 
 Run:
 
@@ -1126,7 +1126,7 @@ Run:
 
 Expected: 6 个作业各 250 名患者；状态文件明确给出 `PASS_NETWORK_WIDE`、`PARTIAL_NETWORK_ALIGNMENT`、`INSUFFICIENT_NETWORK_COVERAGE` 或 `OBSERVATIONAL_PROCESS_ONLY` 之一。
 
-- [ ] **Step 4: 生成图件、清单和审计**
+- [x] **Step 4: 生成图件、清单和审计**
 
 Run:
 
@@ -1149,7 +1149,7 @@ Expected: 清单内容寻址校验 PASS，正式图件状态 PASS。
 - Modify: `docs/final_experiment_audit_cn.md`
 - Modify: `docs/reproducibility_cn.md`
 
-- [ ] **Step 1: 按实际门控状态写结论**
+- [x] **Step 1: 按实际门控状态写结论**
 
 只有 `PASS_NETWORK_WIDE` 才允许写：
 
@@ -1159,11 +1159,11 @@ Expected: 清单内容寻址校验 PASS，正式图件状态 PASS。
 
 > PPTT 完全证明了网络真实且唯一的因果推理机制。
 
-- [ ] **Step 2: 保留失败与不可评估信息**
+- [x] **Step 2: 保留失败与不可评估信息**
 
 审计必须列出每个模型—种子的可评估区间、患者数、像素数、匹配失败数、根恢复误差和全局门控。V4 继续显示 `NOT_TRIGGERED`，V6 继续显示候选特异性，不允许用 V7 覆盖两者。
 
-- [ ] **Step 3: 最终回归检查**
+- [x] **Step 3: 最终回归检查**
 
 Run: `.venv/bin/python -m pytest -v`
 
@@ -1205,18 +1205,18 @@ Expected: 无空白错误。
 
 只有以下事项全部完成，本轮补强才算收口：
 
-- [ ] 新数学性质均有构造测试并进入 V0 门控；
-- [ ] $P_k$ 输出锚定、后缀可靠且两两不相交；
-- [ ] V7 配置和患者清单在 test 干预前锁定；
-- [ ] 两种模型、三个种子、全部 250 名患者均完成或明确失败；
-- [ ] 全部 7 个过程区间进入覆盖审计；
-- [ ] 原模型最终输出而非观察器输出作为干预主结局；
-- [ ] 宏平均、微平均、覆盖和四区间规则共同执行；
-- [ ] 图 2 使用同一像素贯穿全部节点；
-- [ ] 图 3 展示完整过程—节点矩阵；
-- [ ] V4、V6 历史状态未被改写；
-- [ ] 主张严格服从 `v7_conclusion_gate.json`；
-- [ ] 完整测试、图件契约和结果清单校验全部通过。
+- [x] 新数学性质均有构造测试并进入 V0 门控；
+- [x] $P_k$ 输出锚定、后缀可靠且两两不相交；
+- [x] V7 配置和患者清单在 test 干预前锁定；
+- [x] 两种模型、三个种子、全部 250 名患者均完成或明确失败；
+- [x] 全部 7 个过程区间进入覆盖审计；
+- [x] 原模型最终输出而非观察器输出作为干预主结局；
+- [x] 宏平均、微平均、覆盖和四区间规则共同执行；
+- [x] 图 2 使用同一像素贯穿全部节点；
+- [x] 图 3 展示完整过程—节点矩阵；
+- [x] V4、V6 历史状态未被改写；
+- [x] 主张严格服从 `v7_conclusion_gate.json`；
+- [x] 完整测试、图件契约和结果清单校验全部通过。
 
 ## 15. 本文档自查结果
 
