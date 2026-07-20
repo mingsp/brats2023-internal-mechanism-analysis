@@ -495,7 +495,7 @@ def _pairwise_seed_distance(frame: pd.DataFrame) -> pd.DataFrame:
             for row in group.itertuples(index=False)
         }
         if len(seed_rows) < 2:
-            raise ValueError("within-architecture distance requires multiple seeds")
+            continue
         distances = [
             total_variation(seed_rows[left], seed_rows[right])
             for left, right in combinations(sorted(seed_rows), 2)
@@ -508,7 +508,12 @@ def _pairwise_seed_distance(frame: pd.DataFrame) -> pd.DataFrame:
                 "within_distance": float(np.mean(distances)),
             }
         )
-    return pd.DataFrame(rows)
+    output = pd.DataFrame(rows)
+    if output.empty:
+        raise ValueError(
+            "within-architecture distance has no conditions shared by multiple seeds"
+        )
+    return output
 
 
 def structural_process_contrast(

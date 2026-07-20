@@ -173,3 +173,62 @@ rsync -av --info=progress2 \
 ~~~
 
 同步后应再次运行结果清单校验。密码只在交互式 SSH 提示中输入，不写入命令文件、配置、日志或 Git。
+
+## 9. V11 跨架构过程因果抽象
+
+V11 只检验一个方法主张：架构特异的内部张量能否通过同一五状态像素决策语言、闭式最小范数状态交换和低容量转移过程，预测 U-Net 与 TransUNet 在全部八个节点干预后的完整下游反事实轨迹。no-skip U-Net 仅作为全路径结构敏感性对照；CAM、逐跳接屏蔽和局部路径排名不属于 V11 方法。
+
+正式 test 干预前按以下顺序生成验证集模型、校准和不可变计划：
+
+~~~bash
+export PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data
+
+.venv/bin/python scripts/lock_v11_causal_abstraction_protocol.py \
+  --workspace-root . --phase fit-processes \
+  --asset-root "$PPTT_ASSET_ROOT"
+
+for model in unet_baseline unet_noskip transunet_r50_vit_b16; do
+  for seed in 42 123 3407; do
+    .venv/bin/python scripts/prepare_v11_causal_abstraction.py \
+      --workspace-root . --phase validation-job \
+      --asset-root "$PPTT_ASSET_ROOT" \
+      --model "$model" --model-seed "$seed" --device cuda
+  done
+done
+
+.venv/bin/python scripts/prepare_v11_causal_abstraction.py \
+  --workspace-root . --phase aggregate-validation
+
+for model in unet_baseline unet_noskip transunet_r50_vit_b16; do
+  for seed in 42 123 3407; do
+    .venv/bin/python scripts/prepare_v11_causal_abstraction.py \
+      --workspace-root . --phase formal-job \
+      --asset-root "$PPTT_ASSET_ROOT" \
+      --model "$model" --model-seed "$seed" --device cuda
+  done
+done
+
+.venv/bin/python scripts/lock_v11_causal_abstraction_protocol.py \
+  --workspace-root . --phase lock \
+  --asset-root "$PPTT_ASSET_ROOT"
+~~~
+
+协议锁固定全部 9 个权重、216 个观察器文件、验证/测试患者顺序、9 份患者干预计划、三个高层过程、校准结果、阈值和源代码哈希。正式汇总额外拒绝缺失剂量、缺失下游深度、task/null 像素集合不一致、选择性可靠性损失、smoke 混入和非有限数值。
+
+锁定后由显存预算调度器运行正式矩阵。调度器先在验证患者上分别测量 U-Net 与 TransUNet 的峰值显存，画像不保存科学输出；随后仅在估计峰值总和低于 21.5 GiB 时并行独立作业，已完整完成的作业不会重复启动。
+
+~~~bash
+PPTT_WORKSPACE_ROOT="$PWD" \
+PPTT_ASSET_ROOT="$PPTT_ASSET_ROOT" \
+PPTT_PYTHON_BIN="$PWD/.venv/bin/python" \
+bash scripts/server/run_v11_causal_abstraction.sh
+~~~
+
+只读实时监控命令为：
+
+~~~bash
+.venv/bin/python scripts/monitor_v11_causal_abstraction.py \
+  --workspace-root . --watch-seconds 10
+~~~
+
+监控器只读取原子患者产物、结构化日志、PID、GPU 和磁盘状态，不启动、终止或修改作业。只有 `results/v11_causal_abstraction/v11_status.json` 能授权正式结论；结构对照不分离时，即使共享全网络抽象通过，也必须明确标记为不支持结构诊断敏感性。结果图和论文结论均在该状态生成后另行制作。

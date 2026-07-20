@@ -6,6 +6,7 @@ import pytest
 
 from pptt.causal_abstraction.kernels import (
     TransitionProcess,
+    cross_validated_history_comparison,
     estimate_patient_equal_process,
     evaluate_history_dependence,
     pool_architecture_processes,
@@ -129,6 +130,33 @@ def test_history_admission_rejects_material_second_order_gain():
     assert result["status"] == "HIGH_LEVEL_MODEL_MISSPECIFIED"
     assert result["failed_nodes"] == ["up2"]
     assert result["nodes"]["up2"]["mean_tv_gain"] == pytest.approx(0.10)
+
+
+def test_cross_validated_history_comparison_detects_previous_state_signal():
+    rows = []
+    for patient_index in range(40):
+        for previous_state, target_state in ((0, 0), (1, 1)):
+            rows.append(
+                {
+                    "patient_id": f"p{patient_index:03d}",
+                    "model_seed": 42,
+                    "transition_index": 3,
+                    "previous_state": previous_state,
+                    "state_from": 0,
+                    "state_to": target_state,
+                    "count": 100,
+                }
+            )
+    comparison = cross_validated_history_comparison(
+        pd.DataFrame(rows),
+        node_names=("n0", "n1", "n2", "n3", "n4", "n5", "n6", "n7"),
+        fold_count=5,
+        fold_seed=11,
+    )
+
+    assert set(comparison["node"]) == {"n3"}
+    assert comparison["first_order_tv"].mean() > 0.45
+    assert comparison["second_order_tv"].mean() < 0.06
 
 
 def test_process_payload_round_trip_is_exact():

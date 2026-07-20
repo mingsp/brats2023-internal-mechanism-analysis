@@ -11,6 +11,9 @@ import pandas as pd
 
 class ConclusionStatus(str, Enum):
     PASS_SHARED_FULL_NETWORK = "PASS_SHARED_FULL_NETWORK"
+    PASS_SHARED_FULL_NETWORK_NO_STRUCTURAL_SENSITIVITY = (
+        "PASS_SHARED_FULL_NETWORK_NO_STRUCTURAL_SENSITIVITY"
+    )
     BIDIRECTIONAL_TRANSFER_ONLY = "BIDIRECTIONAL_TRANSFER_ONLY"
     ARCHITECTURE_SPECIFIC_PROCESS_ONLY = "ARCHITECTURE_SPECIFIC_PROCESS_ONLY"
     PARTIAL_NODE_RANGE_ONLY = "PARTIAL_NODE_RANGE_ONLY"
@@ -57,6 +60,7 @@ _REQUIRED_AUDIT_FLAGS = (
     "protocol_lock_pass",
     "patient_registry_pass",
     "observer_admission_pass",
+    "observer_randomization_pass",
     "source_clean_before_formal_pass",
 )
 _REQUIRED_THRESHOLDS = (
@@ -68,6 +72,7 @@ _REQUIRED_THRESHOLDS = (
     "minimum_source_states",
     "minimum_state_patients",
     "minimum_state_pixels",
+    "minimum_downstream_reliable_fraction",
     "maximum_reconstruction_error",
     "minimum_state_realization",
     "maximum_restore_error",
@@ -227,6 +232,16 @@ def _report(
             "one shared pixel-decision process is supported as a full-network "
             "approximate causal abstraction.",
         ),
+        ConclusionStatus.PASS_SHARED_FULL_NETWORK_NO_STRUCTURAL_SENSITIVITY: (
+            True,
+            True,
+            True,
+            True,
+            "Within BraTS2023 and the registered U-Net and TransUNet models, "
+            "one shared pixel-decision process is supported as a full-network "
+            "approximate causal abstraction, but structural diagnostic "
+            "sensitivity is not supported.",
+        ),
         ConclusionStatus.BIDIRECTIONAL_TRANSFER_ONLY: (
             False,
             True,
@@ -355,6 +370,7 @@ def evaluate_causal_abstraction_gate(
         _number(thresholds, name, minimum=0.0)
     for name in (
         "minimum_state_realization",
+        "minimum_downstream_reliable_fraction",
         "holm_alpha",
         "minimum_dose_aligned_fraction",
     ):
@@ -428,9 +444,14 @@ def evaluate_causal_abstraction_gate(
                 and float(pixel_count) >= float(thresholds["minimum_state_pixels"])
             ):
                 valid_states.append(int(row.source_state))
+        node_patient_column = (
+            "node_patient_count"
+            if "node_patient_count" in coverage
+            else "patient_count"
+        )
         maximum_patients = (
-            float(pd.to_numeric(coverage["patient_count"], errors="coerce").max())
-            if not coverage.empty and "patient_count" in coverage
+            float(pd.to_numeric(coverage[node_patient_column], errors="coerce").max())
+            if not coverage.empty and node_patient_column in coverage
             else float("nan")
         )
         if (
@@ -447,6 +468,38 @@ def evaluate_causal_abstraction_gate(
                     "maximum_patient_count": maximum_patients,
                 }
             )
+        reliability = _rows_for_cell(
+            metrics,
+            kind="reliability",
+            architecture=architecture,
+            seed=seed,
+            node=node,
+        )
+        if len(reliability) != 1:
+            support_failures.append(
+                {
+                    "stage": "reliability",
+                    **identity,
+                    "reason": "missing_or_duplicate_reliability_row",
+                }
+            )
+        else:
+            fraction = _finite_row_value(
+                reliability.iloc[0], "minimum_reliable_fraction"
+            )
+            if (
+                fraction is None
+                or fraction
+                < float(thresholds["minimum_downstream_reliable_fraction"])
+            ):
+                support_failures.append(
+                    {
+                        "stage": "reliability",
+                        **identity,
+                        "reason": "selective_downstream_reliability_failed",
+                        "minimum_reliable_fraction": fraction,
+                    }
+                )
         operator = _rows_for_cell(
             metrics,
             kind="operator",
@@ -722,6 +775,9 @@ def evaluate_causal_abstraction_gate(
             and delta > 0.0
             and ci_low > 0.0
             and node_count >= len(nodes)
+            and _finite_row_value(row, "patient_count") is not None
+            and float(row["patient_count"])
+            >= float(thresholds["minimum_node_patients"])
         )
     structure_failures: list[dict[str, Any]] = []
     if structural:
@@ -734,7 +790,11 @@ def evaluate_causal_abstraction_gate(
             }
         )
     return _report(
-        ConclusionStatus.PASS_SHARED_FULL_NETWORK,
+        (
+            ConclusionStatus.PASS_SHARED_FULL_NETWORK
+            if structural
+            else ConclusionStatus.PASS_SHARED_FULL_NETWORK_NO_STRUCTURAL_SENSITIVITY
+        ),
         failed=structure_failures,
         passed=passed,
         structural=structural,

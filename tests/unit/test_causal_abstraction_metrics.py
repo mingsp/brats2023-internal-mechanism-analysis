@@ -242,3 +242,21 @@ def test_structural_distance_is_patient_equal_and_exceeds_seed_null():
     assert result.ci_low > 0.0
     assert set(result.node_rows.node) == {"down1", "up4"}
 
+
+def test_structural_distance_ignores_unpaired_seed_conditions():
+    baseline = _process_rows("baseline")
+    noskip = _process_rows("noskip")
+    extra = baseline.iloc[[0]].copy()
+    extra["patient_id"] = "single-seed-only"
+    sparse_seed_null = pd.concat([baseline, extra], ignore_index=True)
+
+    result = structural_process_contrast(
+        baseline,
+        noskip,
+        sparse_seed_null,
+        bootstrap_iterations=200,
+        bootstrap_seed=29,
+    )
+
+    assert result.patient_count == 3
+    assert result.delta_distance > 0.5

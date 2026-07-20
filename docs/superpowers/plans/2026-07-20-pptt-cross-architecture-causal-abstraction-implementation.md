@@ -34,8 +34,9 @@ Natural matching, observer reliability, intervention OOD checks, dose checks, nu
 | `omega` intervention translator | `interventions.py` | implemented and theorem tested |
 | full downstream execution | `runtime.py` | implemented and integration tested |
 | auxiliary natural-state support | `matching.py` | implemented; audit role only |
-| intervention-alignment inference | `metrics.py`, `gates.py` | next implementation block |
-| immutable formal execution | V11 lock, runner, summarizer | pending after inference tests |
+| intervention-alignment inference | `metrics.py`, `gates.py` | implemented and unit tested |
+| immutable formal execution | V11 lock, planner, runner, summarizer | implemented; server preflight pending |
+| execution safety | validation memory profiler, read-only monitor, scheduler | implemented and locally tested |
 
 ---
 
@@ -56,6 +57,7 @@ Natural matching, observer reliability, intervention OOD checks, dose checks, nu
 - `scripts/run_v11_causal_abstraction.py`: resumable per-model/per-seed formal runner.
 - `scripts/summarize_v11_causal_abstraction.py`: patient-first statistics and final gate.
 - `scripts/monitor_v11_causal_abstraction.py`: read-only progress, GPU, disk, failure, and dynamic ETA display.
+- `scripts/profile_v11_causal_abstraction_memory.py`: validation-patient peak-memory profile used only for scheduling.
 - `scripts/server/run_v11_causal_abstraction.sh`: safe scheduler for the nine frozen model jobs.
 - `tests/unit/test_causal_states.py`
 - `tests/unit/test_causal_kernels.py`
@@ -336,7 +338,7 @@ def minimum_norm_state_exchange(
     )
 ```
 
-`bilinear_resize_matrix` must use the exact half-pixel coordinate rule used by PyTorch with `align_corners=False`. Reject non-finite inputs, empty target sets, zero-rank observers, and nullspaces with no available dimension.
+`observer_weight` is the vertical stack of all registered observer-restart weights, and `delta_logits` stacks the corresponding restart-specific natural-source logit differences in the same order. This preserves the frozen mean-probability state definition while imposing exact linear constraints on every restart. `bilinear_resize_matrix` must use the exact half-pixel coordinate rule used by PyTorch with `align_corners=False`. Reject non-finite inputs, empty target sets, zero-rank observers, and nullspaces with no available dimension.
 
 - [ ] **Step 4: Run unit and property tests**
 
@@ -833,7 +835,7 @@ git commit -m "feat: run resumable V11 interventions"
 
 Test duplicate patients, missing jobs, non-finite values, smoke contamination, unequal patient weights, altered lock hashes, and one missing node. Every case must return a failure status rather than silently dropping rows.
 
-- [ ] **Step 2: Implement the summarizer**
+- [x] **Step 2: Implement the summarizer**
 
 It must write atomically:
 
@@ -851,11 +853,11 @@ v11_status.json
 
 Only `v11_status.json` may authorize the shared full-network claim.
 
-- [ ] **Step 3: Implement the read-only monitor**
+- [x] **Step 3: Implement the read-only monitor**
 
 Output one refreshed table containing job identity, completed/250 patients, current node, task/null condition counts, failures, GPU memory/utilization, disk free space, recent throughput, and dynamic ETA. It must never spawn, kill, or modify a job.
 
-- [ ] **Step 4: Implement the server scheduler**
+- [x] **Step 4: Implement the server scheduler**
 
 The scheduler performs a one-patient memory profile per architecture before formal launch. It may run independent jobs in parallel only when summed peak memory remains below 21.5 GB and output roots are disjoint. It never restarts completed jobs and prints the monitor command on launch.
 

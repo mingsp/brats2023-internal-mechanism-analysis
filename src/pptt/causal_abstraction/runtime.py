@@ -12,6 +12,7 @@ from pptt.causal_abstraction.interventions import apply_flat_feature_edit
 from pptt.causal_abstraction.states import relationship_states
 from pptt.models.protocol import ModelAdapter
 from pptt.observers.linear import LinearObserver
+from pptt.types import ForwardTrace
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,8 @@ def run_state_exchange(
     truth: np.ndarray,
     reliability_threshold: float,
     zero_dose_tolerance: float = 1.0e-5,
+    dose_batch_size: int | None = None,
+    clean_trace: ForwardTrace | None = None,
 ) -> CounterfactualTrace:
     """Inject one state edit and trace every registered downstream checkpoint."""
 
@@ -148,6 +151,13 @@ def run_state_exchange(
     if len(set(checkpoint_names)) != len(checkpoint_names):
         raise ValueError("adapter checkpoint names must be unique")
     registered_doses = _validated_doses(doses)
+    batch_size = (
+        len(registered_doses)
+        if dose_batch_size is None
+        else int(dose_batch_size)
+    )
+    if batch_size <= 0:
+        raise ValueError("dose_batch_size must be positive")
     reference = np.asarray(truth)
     output_shape = tuple(int(value) for value in image.shape[-2:])
     if (
@@ -178,69 +188,129 @@ def run_state_exchange(
 
     device = _model_device(adapter, image.device)
     image_device = image.to(device)
+    if clean_trace is not None:
+        if (
+            clean_trace.logits.ndim != 4
+            or clean_trace.logits.shape[0] != 1
+            or clean_trace.logits.device != device
+            or tuple(clean_trace.activations) != checkpoint_names
+            or any(
+                activation.ndim != 4
+                or activation.shape[0] != 1
+                or activation.device != device
+                for activation in clean_trace.activations.values()
+            )
+        ):
+            raise ValueError("clean_trace is incompatible with the active adapter and image")
     hooks_before = _hook_count(adapter)
     parameter_marker_before = _parameter_marker(adapter)
-    dose_tensor = torch.tensor(
-        registered_doses,
-        dtype=image_device.dtype,
-        device=device,
-    )
+    downstream_states: OrderedDict[float, OrderedDict[str, np.ndarray]] = OrderedDict()
+    downstream_reliable: OrderedDict[float, OrderedDict[str, np.ndarray]] = OrderedDict()
+    final_logits: OrderedDict[float, np.ndarray] = OrderedDict()
+    upstream_max_error = 0.0
+    zero_error: float | None = None
+    class_count_reference: int | None = None
 
     with torch.inference_mode():
-        clean_trace = adapter.trace(image_device)
-        batch = image_device.expand(len(registered_doses), -1, -1, -1).contiguous()
-
-        def transform(output: torch.Tensor) -> torch.Tensor:
-            return apply_flat_feature_edit(output, delta_h, doses=dose_tensor)
-
-        with adapter.transform_checkpoint_output(node, transform):
-            edited_trace = adapter.trace(batch)
-
-        upstream_max_error = 0.0
-        for upstream in checkpoint_names[:node_index]:
-            clean = clean_trace.activations[upstream].expand_as(
-                edited_trace.activations[upstream]
-            )
-            error = torch.max(
-                torch.abs(edited_trace.activations[upstream] - clean)
-            )
-            upstream_max_error = max(upstream_max_error, float(error.item()))
-
-        states_by_node: dict[str, np.ndarray] = {}
-        reliable_by_node: dict[str, np.ndarray] = {}
-        class_counts: set[int] = set()
-        for downstream in downstream_nodes:
-            states, reliable, class_count = _read_relationship_states(
-                edited_trace.activations[downstream],
-                observer_groups[downstream],
-                truth=reference,
-                reliability_threshold=float(reliability_threshold),
-            )
-            states_by_node[downstream] = states
-            reliable_by_node[downstream] = reliable
-            class_counts.add(class_count)
-        if len(class_counts) != 1:
-            raise ValueError("downstream observers disagree on the class count")
-        class_count = next(iter(class_counts))
-        final_decisions = edited_trace.logits.argmax(dim=1)
-        final_predictions = (
-            final_decisions.detach().cpu().numpy().astype(np.uint8, copy=False)
+        reference_trace = (
+            adapter.trace(image_device) if clean_trace is None else clean_trace
         )
-        final_states = relationship_states(
-            np.broadcast_to(reference, final_predictions.shape),
-            final_predictions,
-            num_classes=class_count,
-        )
-        final_reliable = np.ones(final_states.shape, dtype=bool)
+        for start in range(0, len(registered_doses), batch_size):
+            chunk_doses = registered_doses[start : start + batch_size]
+            dose_tensor = torch.tensor(
+                chunk_doses,
+                dtype=image_device.dtype,
+                device=device,
+            )
+            batch = image_device.expand(
+                len(chunk_doses), -1, -1, -1
+            ).contiguous()
+
+            def transform(output: torch.Tensor) -> torch.Tensor:
+                return apply_flat_feature_edit(output, delta_h, doses=dose_tensor)
+
+            with adapter.transform_checkpoint_output(node, transform):
+                edited_trace = adapter.trace(batch)
+
+            for upstream in checkpoint_names[:node_index]:
+                clean = reference_trace.activations[upstream].expand_as(
+                    edited_trace.activations[upstream]
+                )
+                error = torch.max(
+                    torch.abs(edited_trace.activations[upstream] - clean)
+                )
+                upstream_max_error = max(upstream_max_error, float(error.item()))
+
+            states_by_node: dict[str, np.ndarray] = {}
+            reliable_by_node: dict[str, np.ndarray] = {}
+            class_counts: set[int] = set()
+            for downstream in downstream_nodes:
+                states, reliable, class_count = _read_relationship_states(
+                    edited_trace.activations[downstream],
+                    observer_groups[downstream],
+                    truth=reference,
+                    reliability_threshold=float(reliability_threshold),
+                )
+                states_by_node[downstream] = states
+                reliable_by_node[downstream] = reliable
+                class_counts.add(class_count)
+            if len(class_counts) != 1:
+                raise ValueError("downstream observers disagree on the class count")
+            class_count = next(iter(class_counts))
+            if class_count_reference is None:
+                class_count_reference = class_count
+            elif class_count != class_count_reference:
+                raise ValueError("observer class count changed between dose batches")
+            final_predictions = (
+                edited_trace.logits.argmax(dim=1)
+                .detach()
+                .cpu()
+                .numpy()
+                .astype(np.uint8, copy=False)
+            )
+            final_states = relationship_states(
+                np.broadcast_to(reference, final_predictions.shape),
+                final_predictions,
+                num_classes=class_count,
+            )
+            final_reliable = np.ones(final_states.shape, dtype=bool)
+            if not torch.isfinite(edited_trace.logits).all():
+                raise RuntimeError("state exchange produced non-finite final logits")
+
+            for dose_index, dose in enumerate(chunk_doses):
+                dose_states = OrderedDict(
+                    (name, states_by_node[name][dose_index])
+                    for name in downstream_nodes
+                )
+                dose_states["Y"] = final_states[dose_index]
+                downstream_states[dose] = dose_states
+                dose_reliable = OrderedDict(
+                    (name, reliable_by_node[name][dose_index])
+                    for name in downstream_nodes
+                )
+                dose_reliable["Y"] = final_reliable[dose_index]
+                downstream_reliable[dose] = dose_reliable
+                final_logits[dose] = (
+                    edited_trace.logits[dose_index]
+                    .detach()
+                    .cpu()
+                    .numpy()
+                    .astype(np.float32, copy=False)
+                )
+                if dose == 0.0:
+                    zero_error = float(
+                        torch.max(
+                            torch.abs(
+                                edited_trace.logits[dose_index]
+                                - reference_trace.logits[0]
+                            )
+                        ).item()
+                    )
 
     hooks_after = _hook_count(adapter)
     parameter_marker_after = _parameter_marker(adapter)
-    zero_index = registered_doses.index(0.0)
-    zero_error = float(
-        torch.max(
-            torch.abs(edited_trace.logits[zero_index] - clean_trace.logits[0])
-        ).item()
-    )
+    if zero_error is None:
+        raise RuntimeError("dose zero was not executed")
     if not np.isfinite(zero_error) or zero_error > float(zero_dose_tolerance):
         raise RuntimeError(
             "dose zero failed to reproduce the clean output: "
@@ -251,30 +321,15 @@ def run_state_exchange(
     parameter_unchanged = parameter_marker_after == parameter_marker_before
     if not parameter_unchanged:
         raise RuntimeError("state exchange modified model parameter storage or version")
-    if not torch.isfinite(edited_trace.logits).all():
-        raise RuntimeError("state exchange produced non-finite final logits")
-
-    downstream_states: OrderedDict[float, OrderedDict[str, np.ndarray]] = OrderedDict()
-    downstream_reliable: OrderedDict[float, OrderedDict[str, np.ndarray]] = OrderedDict()
-    final_logits: OrderedDict[float, np.ndarray] = OrderedDict()
-    for dose_index, dose in enumerate(registered_doses):
-        dose_states = OrderedDict(
-            (name, states_by_node[name][dose_index]) for name in downstream_nodes
-        )
-        dose_states["Y"] = final_states[dose_index]
-        downstream_states[dose] = dose_states
-        dose_reliable = OrderedDict(
-            (name, reliable_by_node[name][dose_index]) for name in downstream_nodes
-        )
-        dose_reliable["Y"] = final_reliable[dose_index]
-        downstream_reliable[dose] = dose_reliable
-        final_logits[dose] = (
-            edited_trace.logits[dose_index]
-            .detach()
-            .cpu()
-            .numpy()
-            .astype(np.float32, copy=False)
-        )
+    downstream_states = OrderedDict(
+        (dose, downstream_states[dose]) for dose in registered_doses
+    )
+    downstream_reliable = OrderedDict(
+        (dose, downstream_reliable[dose]) for dose in registered_doses
+    )
+    final_logits = OrderedDict(
+        (dose, final_logits[dose]) for dose in registered_doses
+    )
 
     return CounterfactualTrace(
         node=node,
@@ -293,6 +348,10 @@ def run_state_exchange(
             "observer_restart_count_by_node": {
                 name: len(observer_groups[name]) for name in downstream_nodes
             },
+            "dose_batch_size": min(batch_size, len(registered_doses)),
+            "dose_batch_count": int(
+                np.ceil(len(registered_doses) / float(batch_size))
+            ),
         },
     )
 

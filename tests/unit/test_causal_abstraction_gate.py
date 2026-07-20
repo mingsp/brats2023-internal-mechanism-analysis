@@ -24,6 +24,7 @@ def _thresholds() -> dict[str, object]:
         "minimum_source_states": 2,
         "minimum_state_patients": 2,
         "minimum_state_pixels": 4,
+        "minimum_downstream_reliable_fraction": 0.90,
         "maximum_reconstruction_error": 1.0e-5,
         "minimum_state_realization": 0.95,
         "maximum_restore_error": 1.0e-6,
@@ -38,7 +39,7 @@ def _thresholds() -> dict[str, object]:
         "minimum_order_advantage": 0.10,
         "holm_alpha": 0.05,
         "minimum_dose_aligned_fraction": 0.90,
-        "required_randomized_controls": ("random_observer", "state_permutation"),
+        "required_randomized_controls": ("state_permutation",),
     }
 
 
@@ -48,6 +49,7 @@ def _audit() -> dict[str, object]:
         "protocol_lock_pass": True,
         "patient_registry_pass": True,
         "observer_admission_pass": True,
+        "observer_randomization_pass": True,
         "source_clean_before_formal_pass": True,
         "history_status": "PASS",
     }
@@ -68,12 +70,20 @@ def _rows() -> tuple[pd.DataFrame, pd.DataFrame]:
                             "node": node,
                             "source_state": source_state,
                             "patient_count": 10,
+                            "node_patient_count": 10,
                             "pixel_count": 20,
                             "evaluable": True,
                         }
                     )
                 metrics.extend(
                     [
+                        {
+                            "kind": "reliability",
+                            "architecture": architecture,
+                            "model_seed": seed,
+                            "node": node,
+                            "minimum_reliable_fraction": 0.98,
+                        },
                         {
                             "kind": "operator",
                             "architecture": architecture,
@@ -143,7 +153,7 @@ def _rows() -> tuple[pd.DataFrame, pd.DataFrame]:
                         },
                     ]
                 )
-                for control_name in ("random_observer", "state_permutation"):
+                for control_name in ("state_permutation",):
                     controls.append(
                         {
                             "kind": "randomized",
@@ -180,6 +190,7 @@ def _rows() -> tuple[pd.DataFrame, pd.DataFrame]:
             "delta_distance": 0.20,
             "ci_low": 0.10,
             "reported_node_count": len(NODES),
+            "patient_count": 10,
         }
     )
     return pd.DataFrame(metrics), pd.DataFrame(controls)
@@ -268,6 +279,42 @@ def test_nonseparating_null_or_randomized_control_blocks_causal_claim():
     assert report.causal_claim_authorized is False
 
 
+def test_selective_reliability_loss_blocks_intervention_claim():
+    metrics, controls = _rows()
+    failed = (
+        (metrics.kind == "reliability")
+        & (metrics.architecture == "transunet")
+        & (metrics.node == "down1")
+    )
+    metrics.loc[failed, "minimum_reliable_fraction"] = 0.70
+
+    report = evaluate_causal_abstraction_gate(
+        metrics, controls, _audit(), _thresholds()
+    )
+
+    assert report.status == ConclusionStatus.INSUFFICIENT_INTERVENTION_SUPPORT
+    assert any(
+        item["reason"] == "selective_downstream_reliability_failed"
+        for item in report.failed_conditions
+    )
+
+
+def test_structural_sensitivity_failure_is_explicitly_downgraded():
+    metrics, controls = _rows()
+    metrics.loc[metrics.kind == "structure", "ci_low"] = -0.01
+
+    report = evaluate_causal_abstraction_gate(
+        metrics, controls, _audit(), _thresholds()
+    )
+
+    assert (
+        report.status
+        == ConclusionStatus.PASS_SHARED_FULL_NETWORK_NO_STRUCTURAL_SENSITIVITY
+    )
+    assert report.full_network_claim_authorized is True
+    assert report.structural_sensitivity_supported is False
+
+
 def test_failed_asset_audit_has_priority_over_favorable_results():
     metrics, controls = _rows()
     audit = _audit()
@@ -292,4 +339,3 @@ def test_history_misspecification_has_explicit_status():
 
     assert report.status == ConclusionStatus.HIGH_LEVEL_MODEL_MISSPECIFIED
     assert report.full_network_claim_authorized is False
-

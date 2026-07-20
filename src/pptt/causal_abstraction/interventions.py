@@ -119,6 +119,56 @@ def _validated_matrix(value: torch.Tensor, *, name: str) -> torch.Tensor:
     return value
 
 
+def stack_observer_weights(weights: Sequence[torch.Tensor]) -> torch.Tensor:
+    """Stack restart-specific linear observers into one exact constraint map."""
+
+    matrices = tuple(
+        _validated_matrix(value, name=f"observer_weight[{index}]")
+        for index, value in enumerate(weights)
+    )
+    if len(matrices) < 2:
+        raise ValueError("at least two observer restarts are required")
+    reference = matrices[0]
+    if any(
+        matrix.shape != reference.shape
+        or matrix.dtype != reference.dtype
+        or matrix.device != reference.device
+        for matrix in matrices[1:]
+    ):
+        raise ValueError("observer restart weights must share shape, dtype, and device")
+    return torch.cat(matrices, dim=0)
+
+
+def stack_restart_logit_deltas(
+    source_logits: torch.Tensor,
+    base_logits: torch.Tensor,
+) -> torch.Tensor:
+    """Flatten restart-by-class logit differences into one target matrix."""
+
+    source = source_logits
+    base = base_logits
+    if (
+        not isinstance(source, torch.Tensor)
+        or not isinstance(base, torch.Tensor)
+        or source.ndim != 3
+        or base.shape != source.shape
+    ):
+        raise ValueError(
+            "source_logits and base_logits must share restart x target x class shape"
+        )
+    if (
+        not source.is_floating_point()
+        or source.dtype != base.dtype
+        or source.device != base.device
+        or not torch.isfinite(source).all()
+        or not torch.isfinite(base).all()
+    ):
+        raise ValueError("restart logits must be finite and share dtype and device")
+    if source.shape[0] < 2 or source.shape[1] == 0 or source.shape[2] < 2:
+        raise ValueError("restart logits require multiple restarts, targets, and classes")
+    return (source - base).permute(1, 0, 2).reshape(source.shape[1], -1)
+
+
 def _pseudoinverse(matrix: torch.Tensor, *, rcond: float) -> torch.Tensor:
     if matrix.shape[0] <= matrix.shape[1]:
         gram = matrix @ matrix.T
@@ -281,4 +331,6 @@ __all__ = [
     "equal_norm_nullspace_control",
     "minimum_norm_state_exchange",
     "project_feature_edit",
+    "stack_observer_weights",
+    "stack_restart_logit_deltas",
 ]

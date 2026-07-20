@@ -78,6 +78,18 @@ def _observer_jobs() -> list[dict[str, object]]:
     return rows
 
 
+def _plan_hashes() -> dict[str, str]:
+    return {
+        f"{model}/seed_{seed}": f"{model}-{seed}-plan".encode().hex().ljust(64, "0")[:64]
+        for model in (
+            "unet_baseline",
+            "transunet_r50_vit_b16",
+            "unet_noskip",
+        )
+        for seed in (42, 123, 3407)
+    }
+
+
 def _payload() -> dict:
     return build_v11_protocol_lock_payload(
         configuration=_configuration(),
@@ -101,6 +113,7 @@ def _payload() -> dict:
             "norm_and_leakage": "1" * 64,
             "history_admission": "2" * 64,
         },
+        intervention_plan_hashes=_plan_hashes(),
         data_inventory={
             "data_config_sha256": "3" * 64,
             "split_sha256": "4" * 64,
@@ -148,6 +161,14 @@ def test_configuration_rejects_scope_or_protocol_drift(field, value):
         validate_v11_configuration(changed)
 
 
+def test_configuration_rejects_unregistered_matching_candidate_budget():
+    changed = deepcopy(_configuration())
+    changed["matching"]["source_candidates_per_patient_node_state_class"] = 16
+
+    with pytest.raises(ValueError, match="matching changed"):
+        validate_v11_configuration(changed)
+
+
 def test_lock_requires_clean_source_complete_models_and_all_observers():
     payload = _payload()
     assert len(payload["registered_model_jobs"]) == 9
@@ -172,6 +193,7 @@ def test_lock_requires_clean_source_complete_models_and_all_observers():
             test_patient_ids=_patients(250, "001"),
             process_hashes={"H_U": "c" * 64, "H_T": "d" * 64, "H_shared": "e" * 64},
             calibration_hashes={"matching": "f" * 64, "norm_and_leakage": "1" * 64, "history_admission": "2" * 64},
+            intervention_plan_hashes=_plan_hashes(),
             data_inventory={"data_config_sha256": "3" * 64, "split_sha256": "4" * 64},
             environment_identity={"python": "3.10.8", "torch": "2.1.2+cu118"},
         )
@@ -188,6 +210,7 @@ def test_lock_requires_clean_source_complete_models_and_all_observers():
             test_patient_ids=_patients(250, "001"),
             process_hashes={"H_U": "c" * 64, "H_T": "d" * 64, "H_shared": "e" * 64},
             calibration_hashes={"matching": "f" * 64, "norm_and_leakage": "1" * 64, "history_admission": "2" * 64},
+            intervention_plan_hashes=_plan_hashes(),
             data_inventory={"data_config_sha256": "3" * 64, "split_sha256": "4" * 64},
             environment_identity={"python": "3.10.8", "torch": "2.1.2+cu118"},
         )
@@ -271,4 +294,3 @@ def test_serialized_lock_contains_no_unregistered_dataset_or_architecture():
     assert "acdc" not in encoded.lower()
     assert "swin" not in encoded.lower()
     assert "attention_unet" not in encoded.lower()
-

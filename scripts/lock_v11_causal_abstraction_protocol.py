@@ -6,10 +6,20 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import subprocess
+import tempfile
 from typing import Any, Mapping, Sequence
 
 import yaml
+
+from pptt.causal_abstraction.kernels import (
+    cross_validated_history_comparison,
+    estimate_patient_equal_process,
+    evaluate_history_dependence,
+    pool_architecture_processes,
+)
+from pptt.causal_abstraction.trace_process import collect_case_trace_rows
 
 
 EXPECTED_NAME = "v11_cross_architecture_causal_abstraction"
@@ -73,6 +83,52 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"JSON must contain an object: {path}")
     return payload
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(item) for item in value]
+    if hasattr(value, "item"):
+        try:
+            return _json_ready(value.item())
+        except (TypeError, ValueError):
+            pass
+    if isinstance(value, Path):
+        return str(value)
+    return value
+
+
+def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = json.dumps(
+        _json_ready(payload),
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+        allow_nan=False,
+    ) + "\n"
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def sha256_file(path: Path) -> str:
@@ -148,6 +204,32 @@ def validate_v11_configuration(config: Mapping[str, Any]) -> V11Configuration:
         "protocol_lock",
     )
     _require_equal(
+        config.get("intervention_plan_root"),
+        "results/v11_causal_abstraction/intervention_plans",
+        "intervention_plan_root",
+    )
+    _require_equal(
+        config.get("calibration_manifest"),
+        "results/v11_causal_abstraction/validation_fit/calibration_manifest.json",
+        "calibration_manifest",
+    )
+    _require_equal(
+        config.get("clean_trace_templates"),
+        {
+            "validation": {
+                "unet_baseline": "results/v3_unet_pair/{model}/seed_{seed}/val/case_traces",
+                "unet_noskip": "results/v3_unet_pair/{model}/seed_{seed}/val/case_traces",
+                "transunet_r50_vit_b16": "results/v8_transunet_mechanism/validation_workers/seed_{seed}/{model}/seed_{seed}/val/case_traces",
+            },
+            "formal": {
+                "unet_baseline": "results/v3_unet_pair/{model}/seed_{seed}/test/case_traces",
+                "unet_noskip": "results/v3_unet_pair/{model}/seed_{seed}/test/case_traces",
+                "transunet_r50_vit_b16": "results/v5_transunet/{model}/seed_{seed}/test/case_traces",
+            },
+        },
+        "clean_trace_templates",
+    )
+    _require_equal(
         config.get("high_level_process"),
         {
             "state_count": 5,
@@ -168,13 +250,17 @@ def validate_v11_configuration(config: Mapping[str, Any]) -> V11Configuration:
             "boundary_edges": [1.5, 3.5, 7.5],
             "feature_norm_quantile_bins": 4,
             "validation_locked_feature_norm_edges": True,
+            "selected_slice_rule": "maximum_matched_state_coverage_then_stable_id",
+            "source_candidates_per_patient_node_state_class": 8,
+            "maximum_target_pixels_per_node_patient": 32,
         },
         "matching",
     )
     _require_equal(
         config.get("intervention"),
         {
-            "operator": "output_constrained_minimum_norm_state_exchange",
+            "operator": "restart_ensemble_output_constrained_minimum_norm_state_exchange",
+            "observer_constraint": "all_registered_restarts",
             "pseudoinverse_rcond": 1.0e-7,
             "null_control": "equal_norm_observer_nullspace",
             "maximum_reconstruction_error": 1.0e-5,
@@ -184,6 +270,19 @@ def validate_v11_configuration(config: Mapping[str, Any]) -> V11Configuration:
         },
         "intervention",
     )
+    _require_equal(
+        config.get("controls"),
+        {
+            "depth_permutation": [7, 6, 5, 4, 3, 2, 1, 0],
+            "state_permutation": [1, 0, 3, 4, 2],
+            "minimum_state_permutation_advantage": 0.10,
+            "minimum_state_permutation_ci_low": 0.05,
+            "paired_test": "one_sided_wilcoxon_signed_rank",
+            "holm_family": "depth_order_all_main_model_seed_node_cells",
+            "observer_randomization_source": "v1_frozen_observer_admission",
+        },
+        "controls",
+    )
     expected_coverage = {
         "expected_validation_patients": 125,
         "expected_formal_patients": 250,
@@ -191,6 +290,7 @@ def validate_v11_configuration(config: Mapping[str, Any]) -> V11Configuration:
         "minimum_source_states": 2,
         "minimum_state_patients": 50,
         "minimum_state_pixels": 128,
+        "minimum_downstream_reliable_fraction": 0.90,
     }
     _require_equal(config.get("coverage"), expected_coverage, "coverage")
     _require_equal(
@@ -218,7 +318,7 @@ def validate_v11_configuration(config: Mapping[str, Any]) -> V11Configuration:
             "maximum_null_clean_tv": 0.05,
             "minimum_order_advantage": 0.10,
             "minimum_dose_aligned_fraction": 0.90,
-            "required_randomized_controls": ["random_observer", "state_permutation"],
+            "required_randomized_controls": ["state_permutation"],
             "structure_delta_ci_low_must_exceed_zero": True,
         },
         "gates",
@@ -352,6 +452,20 @@ def _validated_hash_mapping(
     return {name: output[name] for name in sorted(output)}
 
 
+def _validated_plan_hashes(values: Mapping[str, Any]) -> dict[str, str]:
+    expected = {
+        f"{model}/seed_{seed}"
+        for model in EXPECTED_MAIN_MODELS + EXPECTED_CONTROL_MODELS
+        for seed in EXPECTED_MODEL_SEEDS
+    }
+    if set(values) != expected:
+        raise ValueError("intervention plan matrix is incomplete")
+    return {
+        name: _require_sha256(values[name], f"intervention plan {name}")
+        for name in sorted(values)
+    }
+
+
 def build_v11_protocol_lock_payload(
     *,
     configuration: Mapping[str, Any],
@@ -363,6 +477,7 @@ def build_v11_protocol_lock_payload(
     test_patient_ids: Sequence[str],
     process_hashes: Mapping[str, str],
     calibration_hashes: Mapping[str, str],
+    intervention_plan_hashes: Mapping[str, str],
     data_inventory: Mapping[str, str],
     environment_identity: Mapping[str, str],
 ) -> dict[str, Any]:
@@ -427,6 +542,9 @@ def build_v11_protocol_lock_payload(
         ),
         "process_hashes": processes,
         "calibration_hashes": calibrations,
+        "intervention_plan_hashes": _validated_plan_hashes(
+            intervention_plan_hashes
+        ),
         "gate_table": dict(configuration["gates"]),
         "thresholds_may_not_change_after_lock": True,
         "patients_may_not_change_after_lock": True,
@@ -562,6 +680,392 @@ def resolve_source_identity(workspace: Path) -> dict[str, Any]:
     }
 
 
+def _resolve_checkpoint(
+    workspace: Path,
+    asset_root: Path,
+    checkpoint: Mapping[str, Any],
+) -> Path:
+    root = str(checkpoint["root"])
+    if root == "workspace":
+        return workspace / str(checkpoint["path"])
+    if root == "asset":
+        return asset_root / str(checkpoint["path"])
+    raise ValueError(f"unsupported checkpoint root: {root}")
+
+
+def _collect_model_jobs(
+    workspace: Path,
+    asset_root: Path,
+    configuration: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    matrix = _load_yaml(workspace / str(configuration["model_matrix"]))
+    expected_models = set(EXPECTED_MAIN_MODELS + EXPECTED_CONTROL_MODELS)
+    output: list[dict[str, Any]] = []
+    for job in matrix.get("jobs", []):
+        model = str(job.get("model"))
+        seed = int(job.get("seed", -1))
+        if model not in expected_models or seed not in EXPECTED_MODEL_SEEDS:
+            continue
+        checkpoint = _resolve_checkpoint(workspace, asset_root, job["checkpoint"])
+        if not checkpoint.is_file():
+            raise FileNotFoundError(checkpoint)
+        output.append(
+            {
+                "model": model,
+                "model_seed": seed,
+                "checkpoint": str(checkpoint.resolve()),
+                "checkpoint_sha256": sha256_file(checkpoint),
+            }
+        )
+    return _validated_model_jobs(output)
+
+
+def _collect_observer_jobs(
+    workspace: Path,
+    configuration: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    observer_root = workspace / str(configuration["observer_root"])
+    output: list[dict[str, Any]] = []
+    for model in EXPECTED_MAIN_MODELS + EXPECTED_CONTROL_MODELS:
+        for model_seed in EXPECTED_MODEL_SEEDS:
+            directory = observer_root / model / f"seed_{model_seed}"
+            status_path = directory / "v1_status.json"
+            failed_path = directory / "failed_nodes.json"
+            reliability_path = directory / "reliability_thresholds.json"
+            for path in (status_path, failed_path, reliability_path):
+                if not path.is_file():
+                    raise FileNotFoundError(path)
+            if _load_json(status_path).get("status") != "PASS":
+                raise ValueError(f"observer admission is not PASS: {directory}")
+            if _load_json(failed_path).get("failed_nodes"):
+                raise ValueError(f"observer admission contains failed nodes: {directory}")
+            reliability = _load_json(reliability_path).get("threshold")
+            if reliability is None:
+                raise ValueError(f"observer reliability threshold is missing: {directory}")
+            for node in EXPECTED_NODES:
+                for observer_seed in EXPECTED_OBSERVER_SEEDS:
+                    path = (
+                        directory
+                        / "observers"
+                        / node
+                        / "real"
+                        / f"seed_{observer_seed}.pt"
+                    )
+                    if not path.is_file():
+                        raise FileNotFoundError(path)
+                    output.append(
+                        {
+                            "model": model,
+                            "model_seed": model_seed,
+                            "node": node,
+                            "observer_seed": observer_seed,
+                            "path": str(path.resolve()),
+                            "sha256": sha256_file(path),
+                            "status": "PASS",
+                            "reliability_threshold": float(reliability),
+                        }
+                    )
+    return _validated_observer_jobs(output)
+
+
+def _registered_patients(
+    workspace: Path,
+    asset_root: Path,
+) -> tuple[list[str], list[str], dict[str, str]]:
+    data_config_path = workspace / "configs" / "data" / "brats2023_2d.yaml"
+    data_config = _load_yaml(data_config_path)
+    split_path = asset_root / str(data_config["split_file"])
+    split_payload = _load_json(split_path)
+    validation = _validated_patients(
+        sorted(split_payload.get("val", [])),
+        expected_count=125,
+        name="validation",
+    )
+    test = _validated_patients(
+        sorted(split_payload.get("test", [])),
+        expected_count=250,
+        name="test",
+    )
+    return validation, test, {
+        "data_config_sha256": sha256_file(data_config_path),
+        "split_sha256": sha256_file(split_path),
+    }
+
+
+def _validation_asset_hashes(
+    workspace: Path,
+    configuration: Mapping[str, Any],
+) -> tuple[dict[str, str], dict[str, str]]:
+    fit_root = workspace / str(configuration["validation_fit_root"])
+    process_paths = {
+        name: fit_root / f"{name}.json" for name in EXPECTED_PROCESS_NAMES
+    }
+    calibration_paths = {
+        "matching": fit_root / "matching_calibration.json",
+        "norm_and_leakage": fit_root / "norm_and_leakage_calibration.json",
+        "history_admission": fit_root / "history_admission.json",
+    }
+    for path in (*process_paths.values(), *calibration_paths.values()):
+        if not path.is_file():
+            raise FileNotFoundError(path)
+    history = _load_json(calibration_paths["history_admission"])
+    if history.get("status") != "PASS":
+        raise ValueError("history admission did not pass")
+    return (
+        {name: sha256_file(path) for name, path in process_paths.items()},
+        {name: sha256_file(path) for name, path in calibration_paths.items()},
+    )
+
+
+def _collect_plan_hashes(
+    workspace: Path,
+    configuration: Mapping[str, Any],
+    *,
+    test_patient_ids: Sequence[str],
+) -> dict[str, str]:
+    root = workspace / str(configuration["intervention_plan_root"])
+    patients = _validated_patients(
+        test_patient_ids,
+        expected_count=250,
+        name="test",
+    )
+    coverage_limits = configuration["coverage"]
+    hashes: dict[str, str] = {}
+    for model in EXPECTED_MAIN_MODELS + EXPECTED_CONTROL_MODELS:
+        for model_seed in EXPECTED_MODEL_SEEDS:
+            identity = f"{model}/seed_{model_seed}"
+            path = root / model / f"seed_{model_seed}" / "plan_manifest.json"
+            if not path.is_file():
+                raise FileNotFoundError(path)
+            manifest = _load_json(path)
+            if (
+                manifest.get("status") != "COMPLETE_LOCKABLE_PLAN"
+                or manifest.get("model") != model
+                or int(manifest.get("model_seed", -1)) != model_seed
+                or manifest.get("split") != "test"
+                or manifest.get("failed_nodes") != []
+                or manifest.get("patient_ids") != patients
+                or int(manifest.get("patient_count", -1)) != len(patients)
+                or manifest.get("full_activations_persisted") is not False
+            ):
+                raise ValueError(f"intervention plan is not lockable: {identity}")
+            plan_hashes = manifest.get("patient_plan_hashes")
+            if not isinstance(plan_hashes, dict) or list(plan_hashes) != patients:
+                raise ValueError(f"intervention plan patient hashes differ: {identity}")
+            if manifest.get("patient_plan_registry_sha256") != sha256_named_values(
+                plan_hashes
+            ):
+                raise ValueError(f"intervention plan registry hash differs: {identity}")
+            patient_root = path.parent / "patient_plans"
+            for patient_id in patients:
+                patient_path = patient_root / f"{patient_id}.json"
+                if (
+                    not patient_path.is_file()
+                    or sha256_file(patient_path) != str(plan_hashes[patient_id])
+                ):
+                    raise ValueError(
+                        f"intervention patient plan differs: {identity}/{patient_id}"
+                    )
+            coverage = manifest.get("coverage")
+            if not isinstance(coverage, dict) or set(coverage) != set(EXPECTED_NODES):
+                raise ValueError(f"intervention plan coverage is incomplete: {identity}")
+            for node in EXPECTED_NODES:
+                summary = coverage[node]
+                evaluable = [
+                    state
+                    for state, values in summary.get("target_states", {}).items()
+                    if int(values.get("patient_count", -1))
+                    >= int(coverage_limits["minimum_state_patients"])
+                    and int(values.get("pixel_count", -1))
+                    >= int(coverage_limits["minimum_state_pixels"])
+                ]
+                if (
+                    int(summary.get("patient_count", -1))
+                    < int(coverage_limits["minimum_node_patients"])
+                    or len(evaluable)
+                    < int(coverage_limits["minimum_source_states"])
+                    or sorted(str(value) for value in evaluable)
+                    != sorted(
+                        str(value)
+                        for value in summary.get("evaluable_target_states", [])
+                    )
+                ):
+                    raise ValueError(
+                        f"intervention plan coverage gate failed: {identity}/{node}"
+                    )
+            hashes[identity] = sha256_file(path)
+    return _validated_plan_hashes(hashes)
+
+
+def _environment_identity() -> dict[str, str]:
+    import numpy
+    import pandas
+    import torch
+
+    return {
+        "python": platform.python_version(),
+        "torch": str(torch.__version__),
+        "numpy": str(numpy.__version__),
+        "pandas": str(pandas.__version__),
+        "cuda": str(torch.version.cuda),
+    }
+
+
+def _trace_directory(
+    workspace: Path,
+    config: Mapping[str, Any],
+    *,
+    split_role: str,
+    model: str,
+    model_seed: int,
+) -> Path:
+    templates = config.get("clean_trace_templates", {})
+    try:
+        template = str(templates[split_role][model])
+    except (KeyError, TypeError) as error:
+        raise ValueError(
+            f"clean trace template is missing for {split_role}/{model}"
+        ) from error
+    return workspace / template.format(model=model, seed=int(model_seed))
+
+
+def fit_validation_processes(
+    workspace: Path,
+    configuration: Mapping[str, Any],
+    *,
+    validation_patient_ids: Sequence[str],
+) -> dict[str, Any]:
+    """Fit H_U, H_T, and H_shared from validation-only clean trajectories."""
+
+    validated = validate_v11_configuration(configuration)
+    patients = _validated_patients(
+        validation_patient_ids,
+        expected_count=validated.validation_patient_count,
+        name="validation",
+    )
+    fit_root = workspace / str(configuration["validation_fit_root"])
+    fit_root.mkdir(parents=True, exist_ok=True)
+    process_by_model = {}
+    history_admission: dict[str, Any] = {}
+    row_inventory: dict[str, Any] = {}
+    process_names = {
+        "unet_baseline": "H_U",
+        "transunet_r50_vit_b16": "H_T",
+    }
+    for model in validated.main_models:
+        transition_frames = []
+        history_frames = []
+        trace_hashes: dict[str, str] = {}
+        for model_seed in validated.model_seeds:
+            directory = _trace_directory(
+                workspace,
+                configuration,
+                split_role="validation",
+                model=model,
+                model_seed=model_seed,
+            )
+            paths = [directory / f"{patient_id}.npz" for patient_id in patients]
+            missing = [path for path in paths if not path.is_file()]
+            if missing:
+                raise FileNotFoundError(missing[0])
+            transitions, histories = collect_case_trace_rows(
+                paths,
+                model_seed=model_seed,
+                num_classes=4,
+            )
+            transition_frames.append(transitions)
+            history_frames.append(histories)
+            trace_hashes[f"seed_{model_seed}_patient_registry"] = sha256_named_values(
+                {patient_id: sha256_file(path) for patient_id, path in zip(patients, paths, strict=True)}
+            )
+        import pandas as pd
+
+        transition_rows = pd.concat(transition_frames, ignore_index=True)
+        history_rows = pd.concat(history_frames, ignore_index=True)
+        process = estimate_patient_equal_process(
+            transition_rows,
+            node_names=validated.nodes,
+            state_count=len(validated.relationship_states),
+            alpha=float(configuration["high_level_process"]["dirichlet_alpha"]),
+            source=model,
+        )
+        comparison = cross_validated_history_comparison(
+            history_rows,
+            node_names=validated.nodes,
+            state_count=len(validated.relationship_states),
+            alpha=float(configuration["high_level_process"]["dirichlet_alpha"]),
+            fold_count=int(configuration["high_level_process"]["patient_folds"]),
+            fold_seed=int(configuration["high_level_process"]["fold_seed"]),
+        )
+        admission = evaluate_history_dependence(
+            comparison,
+            tolerance=float(configuration["high_level_process"]["history_tv_tolerance"]),
+            bootstrap_iterations=int(configuration["statistics"]["bootstrap_iterations"]),
+            bootstrap_seed=int(configuration["statistics"]["bootstrap_seed"]),
+        )
+        process_by_model[model] = process
+        process_name = process_names[model]
+        _write_json_atomic(fit_root / f"{process_name}.json", process.to_payload())
+        transition_rows.to_parquet(
+            fit_root / f"{process_name}_transition_counts.parquet",
+            index=False,
+        )
+        history_rows.to_parquet(
+            fit_root / f"{process_name}_history_counts.parquet",
+            index=False,
+        )
+        comparison.to_parquet(
+            fit_root / f"{process_name}_history_comparison.parquet",
+            index=False,
+        )
+        history_admission[process_name] = admission
+        row_inventory[process_name] = {
+            "transition_row_count": int(len(transition_rows)),
+            "history_row_count": int(len(history_rows)),
+            "history_comparison_row_count": int(len(comparison)),
+            "trace_hashes": trace_hashes,
+        }
+    shared = pool_architecture_processes(
+        {
+            "unet_baseline": process_by_model["unet_baseline"],
+            "transunet_r50_vit_b16": process_by_model[
+                "transunet_r50_vit_b16"
+            ],
+        }
+    )
+    _write_json_atomic(fit_root / "H_shared.json", shared.to_payload())
+    history_status = (
+        "PASS"
+        if all(value["status"] == "PASS" for value in history_admission.values())
+        else "HIGH_LEVEL_MODEL_MISSPECIFIED"
+    )
+    history_payload = {
+        "status": history_status,
+        "architectures": history_admission,
+        "tolerance": float(configuration["high_level_process"]["history_tv_tolerance"]),
+        "patient_folds": int(configuration["high_level_process"]["patient_folds"]),
+        "fold_seed": int(configuration["high_level_process"]["fold_seed"]),
+    }
+    _write_json_atomic(fit_root / "history_admission.json", history_payload)
+    process_hashes = {
+        name: sha256_file(fit_root / f"{name}.json")
+        for name in EXPECTED_PROCESS_NAMES
+    }
+    status = {
+        "status": history_status,
+        "process_hashes": process_hashes,
+        "history_admission_sha256": sha256_file(
+            fit_root / "history_admission.json"
+        ),
+        "row_inventory": row_inventory,
+        "validation_patient_registry_sha256": sha256_named_values(
+            {str(index): value for index, value in enumerate(patients)}
+        ),
+    }
+    _write_json_atomic(fit_root / "process_fit_status.json", status)
+    return status
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate and inspect the immutable V11 causal-abstraction configuration."
@@ -572,11 +1076,70 @@ def main() -> int:
         type=Path,
         default=Path("configs/experiments/v11_causal_abstraction.yaml"),
     )
+    parser.add_argument(
+        "--phase",
+        choices=("inspect", "fit-processes", "lock"),
+        default="lock",
+    )
+    parser.add_argument("--asset-root", type=Path)
     args = parser.parse_args()
     workspace = args.workspace_root.resolve()
     config_path = args.config if args.config.is_absolute() else workspace / args.config
     configuration = _load_yaml(config_path.resolve())
     validated = validate_v11_configuration(configuration)
+    if args.phase == "fit-processes":
+        if args.asset_root is None:
+            raise ValueError("--asset-root is required for validation process fitting")
+        validation_patients, _, _ = _registered_patients(
+            workspace,
+            args.asset_root.resolve(),
+        )
+        result = fit_validation_processes(
+            workspace,
+            configuration,
+            validation_patient_ids=validation_patients,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0 if result["status"] == "PASS" else 2
+    if args.phase == "lock":
+        if args.asset_root is None:
+            raise ValueError("--asset-root is required for the formal V11 lock")
+        asset_root = args.asset_root.resolve()
+        validation_patients, test_patients, data_inventory = _registered_patients(
+            workspace,
+            asset_root,
+        )
+        process_hashes, calibration_hashes = _validation_asset_hashes(
+            workspace,
+            configuration,
+        )
+        payload = build_v11_protocol_lock_payload(
+            configuration=configuration,
+            configuration_sha256=sha256_file(config_path.resolve()),
+            source_identity=resolve_source_identity(workspace),
+            model_jobs=_collect_model_jobs(workspace, asset_root, configuration),
+            observer_jobs=_collect_observer_jobs(workspace, configuration),
+            validation_patient_ids=validation_patients,
+            test_patient_ids=test_patients,
+            process_hashes=process_hashes,
+            calibration_hashes=calibration_hashes,
+            intervention_plan_hashes=_collect_plan_hashes(
+                workspace,
+                configuration,
+                test_patient_ids=test_patients,
+            ),
+            data_inventory=data_inventory,
+            environment_identity=_environment_identity(),
+        )
+        lock_path = workspace / str(configuration["protocol_lock"])
+        formal_root = workspace / str(configuration["formal_job_root"])
+        write_protocol_lock(
+            lock_path,
+            payload,
+            formal_output_root=formal_root,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
     result = {
         "status": "CONFIGURATION_VALID",
         "configuration_sha256": sha256_file(config_path.resolve()),

@@ -19,6 +19,17 @@ validation_fit_root: results/v11_causal_abstraction/validation_fit
 formal_job_root: results/v11_causal_abstraction/formal_jobs
 output_root: results/v11_causal_abstraction
 protocol_lock: results/v11_causal_abstraction/v11_protocol_lock.json
+intervention_plan_root: results/v11_causal_abstraction/intervention_plans
+calibration_manifest: results/v11_causal_abstraction/validation_fit/calibration_manifest.json
+clean_trace_templates:
+  validation:
+    unet_baseline: results/v3_unet_pair/{model}/seed_{seed}/val/case_traces
+    unet_noskip: results/v3_unet_pair/{model}/seed_{seed}/val/case_traces
+    transunet_r50_vit_b16: results/v8_transunet_mechanism/validation_workers/seed_{seed}/{model}/seed_{seed}/val/case_traces
+  formal:
+    unet_baseline: results/v3_unet_pair/{model}/seed_{seed}/test/case_traces
+    unet_noskip: results/v3_unet_pair/{model}/seed_{seed}/test/case_traces
+    transunet_r50_vit_b16: results/v5_transunet/{model}/seed_{seed}/test/case_traces
 
 high_level_process:
   state_count: 5
@@ -35,15 +46,28 @@ matching:
   boundary_edges: [1.5, 3.5, 7.5]
   feature_norm_quantile_bins: 4
   validation_locked_feature_norm_edges: true
+  selected_slice_rule: maximum_matched_state_coverage_then_stable_id
+  source_candidates_per_patient_node_state_class: 8
+  maximum_target_pixels_per_node_patient: 32
 
 intervention:
-  operator: output_constrained_minimum_norm_state_exchange
+  operator: restart_ensemble_output_constrained_minimum_norm_state_exchange
+  observer_constraint: all_registered_restarts
   pseudoinverse_rcond: 1.0e-7
   null_control: equal_norm_observer_nullspace
   maximum_reconstruction_error: 1.0e-5
   minimum_state_realization: 0.95
   maximum_restore_error: 1.0e-6
   validation_locked_norm_and_leakage_limits: true
+
+controls:
+  depth_permutation: [7, 6, 5, 4, 3, 2, 1, 0]
+  state_permutation: [1, 0, 3, 4, 2]
+  minimum_state_permutation_advantage: 0.10
+  minimum_state_permutation_ci_low: 0.05
+  paired_test: one_sided_wilcoxon_signed_rank
+  holm_family: depth_order_all_main_model_seed_node_cells
+  observer_randomization_source: v1_frozen_observer_admission
 
 coverage:
   expected_validation_patients: 125
@@ -52,6 +76,7 @@ coverage:
   minimum_source_states: 2
   minimum_state_patients: 50
   minimum_state_pixels: 128
+  minimum_downstream_reliable_fraction: 0.90
 
 statistics:
   bootstrap_iterations: 10000
@@ -72,7 +97,7 @@ gates:
   maximum_null_clean_tv: 0.05
   minimum_order_advantage: 0.10
   minimum_dose_aligned_fraction: 0.90
-  required_randomized_controls: [random_observer, state_permutation]
+  required_randomized_controls: [state_permutation]
   structure_delta_ci_low_must_exceed_zero: true
 
 protocol:
@@ -82,4 +107,3 @@ protocol:
   validation_processes_may_not_change_after_lock: true
   formal_mode_rejects_patient_limit: true
   smoke_results_are_never_formal: true
-

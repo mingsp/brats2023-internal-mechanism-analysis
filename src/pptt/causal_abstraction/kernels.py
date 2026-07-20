@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import hashlib
 from typing import Any
 
 import numpy as np
@@ -303,7 +304,208 @@ def evaluate_history_dependence(
     }
 
 
+_HISTORY_COLUMNS = {
+    "patient_id",
+    "model_seed",
+    "transition_index",
+    "previous_state",
+    "state_from",
+    "state_to",
+    "count",
+}
+
+
+def _history_fold(patient_id: str, *, seed: int, fold_count: int) -> int:
+    encoded = f"{int(seed)}|{patient_id}".encode("utf-8")
+    return int.from_bytes(hashlib.sha256(encoded).digest()[:8], "big") % int(
+        fold_count
+    )
+
+
+def _conditional_kernel(
+    rows: pd.DataFrame,
+    *,
+    transition_count: int,
+    state_count: int,
+    alpha: float,
+    second_order: bool,
+) -> np.ndarray:
+    condition_shape = (
+        (transition_count, state_count, state_count, state_count)
+        if second_order
+        else (transition_count, state_count, state_count)
+    )
+    kernel = np.full(condition_shape, 1.0 / state_count, dtype=np.float64)
+    condition_columns = (
+        ("previous_state", "state_from") if second_order else ("state_from",)
+    )
+    group_columns = ["transition_index", *condition_columns]
+    for condition, selected in rows.groupby(group_columns, sort=True):
+        values = condition if isinstance(condition, tuple) else (condition,)
+        patient_probabilities: list[tuple[int, np.ndarray]] = []
+        for (model_seed, _patient_id), patient_rows in selected.groupby(
+            ["model_seed", "patient_id"],
+            sort=True,
+        ):
+            counts = np.zeros(state_count, dtype=np.float64)
+            np.add.at(
+                counts,
+                patient_rows["state_to"].to_numpy(dtype=np.int64),
+                patient_rows["count"].to_numpy(dtype=np.float64),
+            )
+            probabilities = (counts + alpha) / (counts.sum() + alpha * state_count)
+            patient_probabilities.append((int(model_seed), probabilities))
+        seed_probabilities = []
+        for model_seed in sorted({value[0] for value in patient_probabilities}):
+            seed_probabilities.append(
+                np.mean(
+                    [
+                        probability
+                        for seed, probability in patient_probabilities
+                        if seed == model_seed
+                    ],
+                    axis=0,
+                )
+            )
+        kernel[tuple(int(value) for value in values)] = np.mean(
+            seed_probabilities,
+            axis=0,
+        )
+    return kernel
+
+
+def cross_validated_history_comparison(
+    history_rows: pd.DataFrame,
+    *,
+    node_names: Sequence[str],
+    state_count: int = 5,
+    alpha: float = 0.5,
+    fold_count: int = 5,
+    fold_seed: int = 20260720,
+) -> pd.DataFrame:
+    """Compare held-out first- and second-order predictions by patient."""
+
+    missing = _HISTORY_COLUMNS - set(history_rows.columns)
+    if missing:
+        raise ValueError(f"history rows are missing columns: {sorted(missing)}")
+    names = tuple(str(value) for value in node_names)
+    if len(names) != 8 or len(set(names)) != 8:
+        raise ValueError("history admission requires the eight registered nodes")
+    if int(state_count) < 2 or float(alpha) <= 0 or int(fold_count) < 2:
+        raise ValueError("history model dimensions and smoothing must be positive")
+    frame = history_rows.loc[:, sorted(_HISTORY_COLUMNS)].copy()
+    if frame.empty:
+        raise ValueError("history rows must be nonempty")
+    for column in (
+        "model_seed",
+        "transition_index",
+        "previous_state",
+        "state_from",
+        "state_to",
+    ):
+        numeric = pd.to_numeric(frame[column], errors="raise")
+        if not np.equal(numeric, np.floor(numeric)).all():
+            raise ValueError(f"{column} must contain integers")
+        frame[column] = numeric.astype(np.int64)
+    counts = pd.to_numeric(frame["count"], errors="raise").to_numpy(dtype=np.float64)
+    if not np.isfinite(counts).all() or np.any(counts <= 0):
+        raise ValueError("history counts must be finite and positive")
+    frame["count"] = counts
+    if not frame["transition_index"].between(1, len(names) - 1).all():
+        raise ValueError("history transition_index must be in [1, 7]")
+    for column in ("previous_state", "state_from", "state_to"):
+        if not frame[column].between(0, int(state_count) - 1).all():
+            raise ValueError(f"{column} is outside the registered state space")
+    frame["patient_id"] = frame["patient_id"].astype(str)
+    if (frame["patient_id"].str.len() == 0).any():
+        raise ValueError("history patient identifiers must be nonempty")
+    frame["fold"] = frame["patient_id"].map(
+        lambda value: _history_fold(
+            value,
+            seed=int(fold_seed),
+            fold_count=int(fold_count),
+        )
+    )
+
+    evaluations: list[dict[str, Any]] = []
+    for fold in range(int(fold_count)):
+        train = frame[frame["fold"] != fold]
+        held_out = frame[frame["fold"] == fold]
+        if train.empty or held_out.empty:
+            raise ValueError("history folds must contain training and held-out patients")
+        first = _conditional_kernel(
+            train,
+            transition_count=len(names),
+            state_count=int(state_count),
+            alpha=float(alpha),
+            second_order=False,
+        )
+        second = _conditional_kernel(
+            train,
+            transition_count=len(names),
+            state_count=int(state_count),
+            alpha=float(alpha),
+            second_order=True,
+        )
+        for (
+            patient_id,
+            model_seed,
+            transition_index,
+        ), patient_rows in held_out.groupby(
+            ["patient_id", "model_seed", "transition_index"],
+            sort=True,
+        ):
+            first_total = 0.0
+            second_total = 0.0
+            weight_total = 0.0
+            for (previous_state, state_from), condition_rows in patient_rows.groupby(
+                ["previous_state", "state_from"],
+                sort=True,
+            ):
+                empirical_counts = np.zeros(int(state_count), dtype=np.float64)
+                np.add.at(
+                    empirical_counts,
+                    condition_rows["state_to"].to_numpy(dtype=np.int64),
+                    condition_rows["count"].to_numpy(dtype=np.float64),
+                )
+                weight = float(empirical_counts.sum())
+                empirical = empirical_counts / weight
+                first_error = 0.5 * np.abs(
+                    empirical - first[int(transition_index), int(state_from)]
+                ).sum()
+                second_error = 0.5 * np.abs(
+                    empirical
+                    - second[
+                        int(transition_index),
+                        int(previous_state),
+                        int(state_from),
+                    ]
+                ).sum()
+                first_total += weight * float(first_error)
+                second_total += weight * float(second_error)
+                weight_total += weight
+            evaluations.append(
+                {
+                    "patient_id": str(patient_id),
+                    "model_seed": int(model_seed),
+                    "node": names[int(transition_index)],
+                    "first_order_tv": first_total / weight_total,
+                    "second_order_tv": second_total / weight_total,
+                }
+            )
+    per_seed = pd.DataFrame(evaluations)
+    return (
+        per_seed.groupby(["patient_id", "node"], as_index=False, sort=True)[
+            ["first_order_tv", "second_order_tv"]
+        ]
+        .mean()
+        .sort_values(["node", "patient_id"], kind="mergesort")
+        .reset_index(drop=True)
+    )
+
+
 __all__ = [
+    "cross_validated_history_comparison",
     "TransitionProcess",
     "estimate_patient_equal_process",
     "evaluate_history_dependence",

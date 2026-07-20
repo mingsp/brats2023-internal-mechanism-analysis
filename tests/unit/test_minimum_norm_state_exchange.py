@@ -12,6 +12,8 @@ from pptt.causal_abstraction.interventions import (
     equal_norm_nullspace_control,
     minimum_norm_state_exchange,
     project_feature_edit,
+    stack_observer_weights,
+    stack_restart_logit_deltas,
 )
 
 
@@ -115,6 +117,48 @@ def test_equal_norm_nullspace_control_preserves_observer_logits():
         float(torch.linalg.vector_norm(task_edit)),
         abs=1.0e-10,
     )
+
+
+def test_stacked_restart_operator_reconstructs_every_observer_logit_delta():
+    restart_weights = (
+        torch.tensor(
+            [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]],
+            dtype=torch.float64,
+        ),
+        torch.tensor(
+            [[0.0, 0.0, 1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]],
+            dtype=torch.float64,
+        ),
+        torch.tensor(
+            [[0.0, 0.0, 0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]],
+            dtype=torch.float64,
+        ),
+    )
+    source_logits = torch.tensor(
+        [
+            [[2.0, -2.0], [1.0, -1.0]],
+            [[1.5, -1.5], [0.5, -0.5]],
+            [[1.0, -1.0], [0.25, -0.25]],
+        ],
+        dtype=torch.float64,
+    )
+    base_logits = torch.zeros_like(source_logits)
+    resize_rows = torch.eye(2, dtype=torch.float64)
+    stacked_weight = stack_observer_weights(restart_weights)
+    stacked_delta = stack_restart_logit_deltas(source_logits, base_logits)
+
+    exchange = minimum_norm_state_exchange(
+        resize_rows,
+        stacked_weight,
+        stacked_delta,
+        rcond=1.0e-12,
+    )
+
+    reconstructed = (
+        resize_rows @ exchange.delta_h @ stacked_weight.T
+    ).reshape(2, 3, 2).permute(1, 0, 2)
+    torch.testing.assert_close(reconstructed, source_logits, rtol=0, atol=1.0e-10)
+    assert exchange.target_max_abs_error <= 1.0e-10
 
 
 def test_projected_edit_matches_observer_then_interpolation():

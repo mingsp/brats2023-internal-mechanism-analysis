@@ -126,6 +126,64 @@ def test_state_exchange_traces_complete_registered_downstream_path():
     assert _hook_count(adapter) == 0
 
 
+def test_state_exchange_dose_batching_preserves_complete_results():
+    common = {
+        "adapter": _adapter(),
+        "image": _image(),
+        "node": "down2",
+        "delta_h": torch.tensor(
+            [[-4.0, 4.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
+            dtype=torch.float32,
+        ),
+        "doses": (0.0, 0.25, 0.5, 0.75, 1.0),
+        "observers": _observers(),
+        "truth": np.array([[0, 1], [0, 1]], dtype=np.uint8),
+        "reliability_threshold": 0.0,
+    }
+    unbatched = run_state_exchange(**common)
+    batched = run_state_exchange(**common, dose_batch_size=2)
+
+    assert batched.audits["dose_batch_count"] == 3
+    for dose in common["doses"]:
+        for depth in batched.downstream_states[dose]:
+            np.testing.assert_array_equal(
+                batched.downstream_states[dose][depth],
+                unbatched.downstream_states[dose][depth],
+            )
+            np.testing.assert_array_equal(
+                batched.downstream_reliable[dose][depth],
+                unbatched.downstream_reliable[dose][depth],
+            )
+        np.testing.assert_allclose(
+            batched.final_logits[dose],
+            unbatched.final_logits[dose],
+            atol=1.0e-6,
+        )
+
+
+def test_state_exchange_accepts_one_shared_clean_trace():
+    adapter = _adapter()
+    image = _image()
+    clean = adapter.trace(image)
+    result = run_state_exchange(
+        adapter,
+        image,
+        node="up2",
+        delta_h=torch.tensor(
+            [[-4.0, 4.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
+            dtype=torch.float32,
+        ),
+        doses=(0.0, 1.0),
+        observers=_observers(),
+        truth=np.array([[0, 1], [0, 1]], dtype=np.uint8),
+        reliability_threshold=0.0,
+        clean_trace=clean,
+    )
+
+    assert result.audits["dose_zero_max_abs_logit_error"] <= 1.0e-6
+    assert _hook_count(adapter) == 0
+
+
 def test_state_exchange_removes_transform_hook_after_forward_failure():
     adapter = _adapter()
     bad_delta = torch.zeros((3, 2), dtype=torch.float32)
