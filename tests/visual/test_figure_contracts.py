@@ -194,8 +194,13 @@ def test_pixel_fate_bundle_uses_one_case_slice_and_all_eight_nodes(tmp_path):
         assert manifest["nodes"] == list(nodes)
         assert manifest["node_count"] == 8
         assert manifest["same_case_and_slice_across_panels"] is True
+        assert manifest["scatter"]["point_count"] == 9
+        assert manifest["scatter"]["endpoint_close_threshold_pp"] == 2.0
+        assert manifest["trajectory"]["later_node_encoding"] == "events_relative_to_previous_node"
+        assert set(manifest["trajectory"]["event_totals"]) == {"skip", "no_skip"}
         assert manifest["scatter"]["highlighted"]["terminal_absolute_difference_pp"] == 0.0
         assert manifest["effects"][0]["mean_difference_pp"] == 4.0
+        assert manifest["effects"][-1]["metric"] == "late_to_terminal_ratio"
 
 
 def test_network_alignment_bundle_is_complete_7_by_7_and_preserves_null(tmp_path):

@@ -291,7 +291,7 @@ Run: `python -m pytest tests/unit/test_v8_causal_gate.py tests/integration/test_
 
 Expected: all passed; smoke outputs are explicitly marked `SMOKE_NOT_FOR_CONCLUSION`.
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add src/pptt/statistics/causal_replication.py scripts/run_v8_transunet_mechanism.py scripts/summarize_v8_transunet_mechanism.py tests/unit/test_v8_causal_gate.py tests/integration/test_v8_transunet_mechanism_smoke.py
@@ -313,25 +313,25 @@ git commit -m "feat: validate TransUNet process candidates by locked interventio
 - Modify: `tests/unit/test_causal_visualization.py`
 - Modify: `tests/visual/test_figure_contracts.py`
 
-- [ ] **Step 1: 写失败的图件语义契约**
+- [x] **Step 1: 写失败的图件语义契约**
 
 契约检查：图 1 八节点同病例同切片且只含三类输出符号；图 2 精确包含 750 点、`<=2 pp` 灰带、`86/750`、`0.163`、三项效应和 `3.80x`，两模型均为八节点事件图；图 3 固定病例、四条件、三种子剂量与三端点；V7 灰色空值与 `INSUFFICIENT_NETWORK_COVERAGE`；全部中英文 PNG/PDF/JSON、600 dpi 和源文件 SHA256。
 
-- [ ] **Step 2: 运行并确认现有图件不满足契约**
+- [x] **Step 2: 运行并确认现有图件不满足契约**
 
 Run: `python -m pytest tests/unit/test_method_overview_visualization.py tests/unit/test_causal_visualization.py tests/visual/test_figure_contracts.py -q`
 
 Expected: new semantic assertions fail.
 
-- [ ] **Step 3: 重绘图 1**
+- [x] **Step 3: 重绘图 1**
 
 连续构图仅保留：真实 MRI 与冻结 U 形适配示例、八个真实节点状态、同一像素状态轨迹、转移张量/事件类型/持续形成深度三个输出。移除底部折线、柱状、空间热图和任何 CAM/F/G 元素。
 
-- [ ] **Step 4: 重绘图 2**
+- [x] **Step 4: 重绘图 2**
 
 散点按种子使用不同点形；加入 `<=2 pp` 灰带和固定统计标注；森林图三项共享百分点坐标并标注 `3.80x`；轨迹只叠加青色持续纠正、橙色破坏、紫色错误重编码及白色真值轮廓，不再铺满肿瘤类别色。
 
-- [ ] **Step 5: 重绘图 3 与 V7 补充图**
+- [x] **Step 5: 重绘图 3 与 V7 补充图**
 
 图 3 使用同一裁剪显示 Clean、Corrupt、Target Restore、Matched Control；恢复新增像素用高饱和青色，持续保留用低饱和青色，丢失用橙色；剂量曲线使用不同点形/线型并直接标注；森林图显示有效患者数。V7 仅保留效应与覆盖两矩阵，灰色为不可评估。
 

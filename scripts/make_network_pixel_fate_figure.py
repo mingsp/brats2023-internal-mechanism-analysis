@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -18,6 +19,14 @@ from pptt.visualization.pixel_fate import (
 
 NODES = ("down1", "down2", "down3", "down4", "up1", "up2", "up3", "up4")
 VECTOR_COLUMNS = tuple(f"persistent_net_t{index}_difference" for index in range(7))
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _load_trace(
@@ -113,9 +122,27 @@ def main() -> int:
     process_root = workspace / "results" / "process_effect_gate"
     paired = pd.read_parquet(process_root / "patient_process_contrasts.parquet")
     effects = pd.read_parquet(process_root / "primary_process_statistics.parquet")
+    formal_scatter = paired[paired["split"] == "test"].copy()
+    if len(formal_scatter) != 750:
+        raise ValueError("formal figure 2 requires exactly 750 patient-seed pairs")
+    seed_counts = formal_scatter["model_seed"].value_counts().to_dict()
+    if seed_counts != {42: 250, 123: 250, 3407: 250}:
+        raise ValueError("formal figure 2 seed registry is incomplete")
+    close = formal_scatter[
+        formal_scatter["terminal_dice_difference"].abs() <= 0.02
+    ]
+    if len(close) != 86 or not np.isclose(
+        float(close["full_path_transition_tv"].median()),
+        0.16284985769364219,
+        atol=1.0e-12,
+        rtol=0.0,
+    ):
+        raise ValueError("formal endpoint-close process-distance readout changed")
     representative, seed_frame = _representative_patient(paired)
     patient_id = str(representative["patient_id"])
     model_seed = int(representative["model_seed"])
+    if patient_id != "BraTS-GLI-00734-000":
+        raise ValueError("locked median-profile representative patient changed")
     baseline, baseline_path = _load_trace(
         workspace,
         model="unet_baseline",
@@ -166,12 +193,13 @@ def main() -> int:
         if args.output_root is not None
         else workspace / "results" / "paper_outputs" / args.language
     ).resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
     output_base = output_root / "fig2_pptt_pixel_fate"
     seed_row = seed_frame.iloc[0]
     manifest = render_pixel_fate_figure(
         output_base=output_base,
         language=args.language,
-        scatter=paired[paired["split"] == "test"],
+        scatter=formal_scatter,
         patient_id=patient_id,
         model_seed=model_seed,
         slice_id=slice_id,
@@ -179,10 +207,13 @@ def main() -> int:
         truth=truth,
         baseline_states=baseline.states[:, slice_index],
         noskip_states=noskip.states[:, slice_index],
+        baseline_reliable=baseline.reliable[:, slice_index],
+        noskip_reliable=noskip.reliable[:, slice_index],
+        baseline_final_state=baseline.final_model_state[slice_index],
+        noskip_final_state=noskip.final_model_state[slice_index],
         nodes=NODES,
         process_vector=[float(seed_row[column]) for column in VECTOR_COLUMNS],
         effect_statistics=effects,
-        process_masks=joint[:, slice_index],
         dpi=args.dpi,
     )
     manifest.update(
@@ -195,6 +226,18 @@ def main() -> int:
                 "noskip_trace": str(noskip_path),
                 "image": str(image_path),
                 "mask": str(mask_path),
+            },
+            "source_sha256": {
+                "patient_process_contrasts": _sha256(
+                    process_root / "patient_process_contrasts.parquet"
+                ),
+                "primary_process_statistics": _sha256(
+                    process_root / "primary_process_statistics.parquet"
+                ),
+                "baseline_trace": _sha256(baseline_path),
+                "noskip_trace": _sha256(noskip_path),
+                "image": _sha256(image_path),
+                "mask": _sha256(mask_path),
             },
         }
     )

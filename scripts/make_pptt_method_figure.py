@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,14 @@ from typing import Any
 import numpy as np
 
 from pptt.visualization.method_overview import render_pptt_method_figure
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _json_ready(value: Any) -> Any:
@@ -28,7 +37,7 @@ def main() -> int:
     )
     parser.add_argument("--workspace-root", type=Path, default=Path("."))
     parser.add_argument("--language", choices=("en", "zh"), required=True)
-    parser.add_argument("--dpi", type=int, default=450)
+    parser.add_argument("--dpi", type=int, default=600)
     args = parser.parse_args()
 
     workspace = args.workspace_root.resolve()
@@ -67,6 +76,17 @@ def main() -> int:
         "uses_actual_observer_states": True,
         "contains_stage_numbering": False,
         "contains_cam": False,
+        "node_count": 8,
+        "process_outputs": [
+            "conditional_transition_tensor",
+            "pixel_event_decomposition",
+            "persistent_correct_formation_depth",
+        ],
+        "source_sha256": {
+            "artifact": _sha256(artifact_path),
+            "manifest": _sha256(manifest_path),
+        },
+        "dpi": int(args.dpi),
         "outputs": {"png": png_path, "pdf": pdf_path},
     }
     output_manifest = output_root / "fig1_pptt_method_overview.json"

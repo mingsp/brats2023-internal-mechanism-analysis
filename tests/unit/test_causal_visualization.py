@@ -4,6 +4,7 @@ import pandas as pd
 from pptt.visualization.causal import (
     bootstrap_mean_interval,
     causal_event_map,
+    comparative_causal_event_map,
     display_channel,
     render_causal_result_figure,
 )
@@ -41,6 +42,31 @@ def test_causal_event_map_separates_retained_and_lost_target_pixels():
     # 0: outside the fixed clean target set; 1: persistently retained;
     # 2: target correction lost under the intervention.
     np.testing.assert_array_equal(events, [[1, 1], [2, 0]])
+
+
+def test_comparative_event_map_marks_pixels_recovered_from_corruption():
+    truth = np.asarray([[1, 1], [2, 0]], dtype=np.uint8)
+    target = np.asarray([[True, True], [True, False]])
+    corrupt = np.asarray(
+        [
+            [[0, 0], [0, 0]],
+            [[1, 0], [0, 0]],
+        ],
+        dtype=np.uint8,
+    )
+    restored = corrupt.copy()
+    restored[1, 0, 1] = 1
+
+    events = comparative_causal_event_map(
+        restored,
+        corrupt,
+        truth,
+        target,
+        transition_index=0,
+        show_recovery=True,
+    )
+
+    np.testing.assert_array_equal(events, [[1, 3], [2, 0]])
 
 
 def test_dose_summary_reports_bootstrap_interval_for_each_seed_and_dose():
@@ -112,6 +138,7 @@ def test_causal_result_figure_renders_case_dose_and_effects(tmp_path):
                 "ci_low": mean - 0.04,
                 "ci_high": mean + 0.04,
                 "paired_cohens_d": 1.2,
+                "patient_count": 40,
             }
             for endpoint, mean in (
                 ("necessity", 0.5),

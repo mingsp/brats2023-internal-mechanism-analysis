@@ -9,6 +9,8 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib.colors import ListedColormap
+from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
 
@@ -26,7 +28,11 @@ _EFFECT_COLORS = {
     "late_persistent_net_recovery": "#087F8C",
     "terminal_dice": "#315E9A",
 }
-_SEED_COLORS = {42: "#315E9A", 123: "#D97706", 3407: "#168A76"}
+_SEED_COLOR = "#315E9A"
+_SEED_MARKERS = {42: "o", 123: "s", 3407: "^"}
+_CORRECTION = "#0F8B8D"
+_DAMAGE = "#E07A2D"
+_REENCODING = "#7551A6"
 
 
 def _json_ready(value: Any) -> Any:
@@ -123,16 +129,24 @@ def _draw_scatter(
     ]
     if selected.empty:
         raise ValueError("scatter table has no finite observations")
+    endpoint_close = selected["terminal_abs"] <= 0.02
+    endpoint_close_count = int(endpoint_close.sum())
+    close_process_median = float(
+        selected.loc[endpoint_close, "process_distance"].median()
+    )
+    axis.axvspan(0.0, 2.0, color="#E5E7EB", alpha=0.70, zorder=0)
     points: list[dict[str, Any]] = []
     for seed, group in selected.groupby("model_seed", sort=True):
-        color = _SEED_COLORS.get(int(seed), "#6B7280")
+        marker = _SEED_MARKERS.get(int(seed), "o")
         axis.scatter(
             group["terminal_abs"] * 100.0,
             group["process_distance"],
-            s=13,
-            alpha=0.40,
-            color=color,
-            edgecolors="none",
+            s=17,
+            alpha=0.42,
+            color=_SEED_COLOR,
+            marker=marker,
+            edgecolors="white",
+            linewidths=0.25,
             rasterized=True,
         )
         points.extend(
@@ -177,6 +191,24 @@ def _draw_scatter(
         else "Absolute terminal Dice difference (pp)"
     )
     axis.set_ylabel("全路径转移距离" if language == "zh" else "Full-path transition distance")
+    annotation = (
+        f"终点差 ≤ 2 pp：{endpoint_close_count}/{len(selected)}\n"
+        f"过程距离中位数 = {close_process_median:.3f}"
+        if language == "zh"
+        else f"Endpoint gap ≤ 2 pp: {endpoint_close_count}/{len(selected)}\n"
+        f"Median process distance = {close_process_median:.3f}"
+    )
+    axis.text(
+        0.025,
+        0.97,
+        annotation,
+        transform=axis.transAxes,
+        ha="left",
+        va="top",
+        fontsize=7.6,
+        color="#334E68",
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.86, "pad": 2.0},
+    )
     axis.grid(axis="y", color="#E5E7EB", linewidth=0.55)
     axis.spines[["top", "right"]].set_visible(False)
     handles = [
@@ -185,16 +217,27 @@ def _draw_scatter(
             [0],
             marker="o",
             linestyle="none",
-            markerfacecolor=_SEED_COLORS.get(int(seed), "#6B7280"),
-            markeredgecolor="none",
+            markerfacecolor=_SEED_COLOR,
+            markeredgecolor="white",
+            markeredgewidth=0.4,
             markersize=4.6,
             label=f"seed {int(seed)}",
         )
         for seed in sorted(selected["model_seed"].unique())
     ]
+    for handle, seed in zip(handles, sorted(selected["model_seed"].unique()), strict=True):
+        handle.set_marker(_SEED_MARKERS.get(int(seed), "o"))
     axis.legend(handles=handles, frameon=False, loc="lower right", ncol=min(3, len(handles)))
     return {
         "point_count": len(points),
+        "endpoint_close_threshold_pp": 2.0,
+        "endpoint_close_count": endpoint_close_count,
+        "endpoint_close_fraction": endpoint_close_count / len(selected),
+        "endpoint_close_process_distance_median": close_process_median,
+        "seed_encoding": {
+            str(int(seed)): {"color": _SEED_COLOR, "marker": _SEED_MARKERS.get(int(seed), "o")}
+            for seed in sorted(selected["model_seed"].unique())
+        },
         "points": points,
         "highlighted": {
             "patient_id": str(patient_id),
@@ -247,7 +290,83 @@ def _draw_effects(
     axis.grid(axis="x", color="#E5E7EB", linewidth=0.55)
     axis.tick_params(axis="y", length=0)
     axis.spines[["top", "right", "left"]].set_visible(False)
+    by_metric = {row["metric"]: row for row in records}
+    ratio = (
+        by_metric["late_persistent_net_recovery"]["mean_difference_pp"]
+        / by_metric["terminal_dice"]["mean_difference_pp"]
+    )
+    axis.text(
+        0.98,
+        0.04,
+        (
+            f"后期持续净恢复 / 终点 Dice = {ratio:.2f}×"
+            if language == "zh"
+            else f"Late persistent recovery / terminal Dice = {ratio:.2f}×"
+        ),
+        transform=axis.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=7.8,
+        color="#087F8C",
+        fontweight="bold",
+    )
+    records.append({"metric": "late_to_terminal_ratio", "ratio": ratio})
     return records
+
+
+def _trajectory_events(
+    states: np.ndarray,
+    truth: np.ndarray,
+    reliable: np.ndarray,
+    final_state: np.ndarray,
+) -> np.ndarray:
+    events = np.zeros((states.shape[0] - 1, *truth.shape), dtype=np.uint8)
+    tumor = truth > 0
+    reliable_suffix = np.logical_and.accumulate(reliable[::-1], axis=0)[::-1]
+    for transition in range(states.shape[0] - 1):
+        current = states[transition]
+        following = states[transition + 1]
+        persistent_correct = np.all(
+            states[transition + 1 :] == truth[np.newaxis, ...],
+            axis=0,
+        )
+        correction = (
+            tumor
+            & reliable_suffix[transition]
+            & (current != truth)
+            & (following == truth)
+            & persistent_correct
+            & (final_state == truth)
+        )
+        damage = (
+            tumor
+            & reliable[transition]
+            & (current == truth)
+            & (following != truth)
+        )
+        reencoding = (
+            tumor
+            & reliable[transition]
+            & (current != truth)
+            & (following != truth)
+            & (current != following)
+        )
+        events[transition, correction] = 1
+        events[transition, damage] = 2
+        events[transition, reencoding] = 3
+    return events
+
+
+def _crop_for_trajectory(truth: np.ndarray, events: np.ndarray) -> tuple[slice, slice]:
+    selected = (truth > 0) | np.any(events > 0, axis=(0, 1))
+    rows, columns = np.where(selected)
+    if not rows.size:
+        return slice(0, truth.shape[0]), slice(0, truth.shape[1])
+    margin = 8
+    return (
+        slice(max(0, int(rows.min()) - margin), min(truth.shape[0], int(rows.max()) + margin + 1)),
+        slice(max(0, int(columns.min()) - margin), min(truth.shape[1], int(columns.max()) + margin + 1)),
+    )
 
 
 def _draw_trajectory(
@@ -258,54 +377,105 @@ def _draw_trajectory(
     truth: np.ndarray,
     baseline_states: np.ndarray,
     noskip_states: np.ndarray,
+    baseline_reliable: np.ndarray,
+    noskip_reliable: np.ndarray,
+    baseline_final_state: np.ndarray,
+    noskip_final_state: np.ndarray,
     nodes: Sequence[str],
-    process_masks: np.ndarray | None,
     language: str,
 ) -> dict[str, Any]:
     node_names = tuple(str(value) for value in nodes)
     grid = container.subgridspec(
         2,
-        len(node_names) + 3,
-        width_ratios=[1.05, 1.05, 0.55, *([1.0] * len(node_names))],
+        len(node_names) + 2,
+        width_ratios=[1.05, 0.68, *([1.0] * len(node_names))],
         wspace=0.045,
         hspace=0.08,
     )
-    blank = np.zeros_like(truth)
-    reference_images = (
-        (segmentation_overlay(image, blank, colors=BRATS_CLASS_COLORS, alpha=0.0), "T2-FLAIR"),
-        (
-            segmentation_overlay(blank.astype(np.float32), truth, colors=BRATS_CLASS_COLORS, alpha=1.0),
-            "金标准" if language == "zh" else "Ground truth",
-        ),
+    expected_reliable = (len(node_names) - 1, *truth.shape)
+    if (
+        baseline_reliable.shape != expected_reliable
+        or noskip_reliable.shape != expected_reliable
+        or baseline_reliable.dtype != np.bool_
+        or noskip_reliable.dtype != np.bool_
+        or baseline_final_state.shape != truth.shape
+        or noskip_final_state.shape != truth.shape
+    ):
+        raise ValueError("trajectory reliability and final states do not align")
+    baseline_events = _trajectory_events(
+        baseline_states,
+        truth,
+        baseline_reliable,
+        baseline_final_state,
     )
-    for column, (panel, title) in enumerate(reference_images):
-        axis = figure.add_subplot(grid[:, column])
-        axis.imshow(panel, interpolation="nearest")
-        axis.set_title(title, fontsize=8.2, pad=3)
-        axis.axis("off")
-    union = None
-    if process_masks is not None:
-        masks = np.asarray(process_masks)
-        if masks.shape != (len(node_names) - 1, *truth.shape) or masks.dtype != np.bool_:
-            raise ValueError("process_masks must be boolean with shape 7xHxW")
-        union = masks.any(axis=0)
-    for row_index, (states, label) in enumerate(
+    noskip_events = _trajectory_events(
+        noskip_states,
+        truth,
+        noskip_reliable,
+        noskip_final_state,
+    )
+    crop = _crop_for_trajectory(truth, np.stack([baseline_events, noskip_events]))
+    reference_axis = figure.add_subplot(grid[:, 0])
+    reference_axis.imshow(image[crop], cmap="gray", interpolation="nearest")
+    reference_axis.contour(
+        (truth[crop] > 0).astype(float),
+        levels=[0.5],
+        colors=["white"],
+        linewidths=0.7,
+    )
+    reference_axis.set_title("同一 MRI 与真值边界" if language == "zh" else "Same MRI and GT contour", fontsize=7.8, pad=3)
+    reference_axis.axis("off")
+    event_cmap = ListedColormap([_CORRECTION, _DAMAGE, _REENCODING])
+    event_totals: dict[str, dict[str, int]] = {}
+    for row_index, (states, events, label, key) in enumerate(
         (
-            (baseline_states, "有跳接\nU-Net" if language == "zh" else "Skip\nU-Net"),
-            (noskip_states, "无跳接\nU-Net" if language == "zh" else "No-skip\nU-Net"),
+            (baseline_states, baseline_events, "有跳接\nU-Net" if language == "zh" else "Skip\nU-Net", "skip"),
+            (noskip_states, noskip_events, "无跳接\nU-Net" if language == "zh" else "No-skip\nU-Net", "no_skip"),
         )
     ):
-        label_axis = figure.add_subplot(grid[row_index, 2])
+        label_axis = figure.add_subplot(grid[row_index, 1])
         label_axis.text(0.5, 0.5, label, ha="center", va="center", fontsize=8.3)
         label_axis.axis("off")
+        event_totals[key] = {
+            "persistent_correction": int(np.count_nonzero(events == 1)),
+            "damage": int(np.count_nonzero(events == 2)),
+            "wrong_reencoding": int(np.count_nonzero(events == 3)),
+        }
         for node_index, node in enumerate(node_names):
-            axis = figure.add_subplot(grid[row_index, node_index + 3])
-            axis.imshow(
-                segmentation_overlay(image, states[node_index], colors=BRATS_CLASS_COLORS, alpha=0.53),
-                interpolation="nearest",
+            axis = figure.add_subplot(grid[row_index, node_index + 2])
+            axis.imshow(image[crop], cmap="gray", interpolation="nearest")
+            predicted_tumor = states[node_index][crop] > 0
+            if np.any(predicted_tumor) and np.any(~predicted_tumor):
+                axis.contour(
+                    predicted_tumor.astype(float),
+                    levels=[0.5],
+                    colors=["#AAB4BE"],
+                    linewidths=0.42,
+                )
+            if node_index == 0:
+                initial_correct = (truth > 0) & (states[0] == truth)
+                axis.imshow(
+                    np.ma.masked_where(~initial_correct[crop], initial_correct[crop]),
+                    cmap=ListedColormap(["#6FA7A3"]),
+                    alpha=0.48,
+                    interpolation="nearest",
+                )
+            else:
+                current_events = events[node_index - 1][crop]
+                axis.imshow(
+                    np.ma.masked_where(current_events == 0, current_events),
+                    cmap=event_cmap,
+                    vmin=1,
+                    vmax=3,
+                    alpha=0.88,
+                    interpolation="nearest",
+                )
+            axis.contour(
+                (truth[crop] > 0).astype(float),
+                levels=[0.5],
+                colors=["white"],
+                linewidths=0.55,
             )
-            if union is not None and np.any(union) and np.any(~union):
-                axis.contour(union.astype(float), levels=[0.5], colors=["white"], linewidths=0.42)
             if row_index == 0:
                 axis.set_title(node, fontsize=7.8, pad=3)
             axis.set_xticks([])
@@ -313,12 +483,27 @@ def _draw_trajectory(
             for spine in axis.spines.values():
                 spine.set_color("#D1D5DB")
                 spine.set_linewidth(0.45)
+    figure.legend(
+        handles=[
+            Patch(facecolor=_CORRECTION, label="持续纠正" if language == "zh" else "Persistent correction"),
+            Patch(facecolor=_DAMAGE, label="破坏" if language == "zh" else "Damage"),
+            Patch(facecolor=_REENCODING, label="错误重编码" if language == "zh" else "Wrong re-encoding"),
+        ],
+        frameon=False,
+        loc="lower center",
+        bbox_to_anchor=(0.58, 0.01),
+        ncol=3,
+        fontsize=7.2,
+    )
     return {
         "truth_class_pixel_counts": {
             str(class_id): int(np.count_nonzero(truth == class_id))
             for class_id in sorted(BRATS_CLASS_COLORS)
         },
-        "process_union_pixel_count": None if union is None else int(union.sum()),
+        "event_totals": event_totals,
+        "first_node_encoding": "correct_tumor_state",
+        "later_node_encoding": "events_relative_to_previous_node",
+        "ground_truth_encoding": "white_contour",
     }
 
 
@@ -334,10 +519,13 @@ def render_pixel_fate_figure(
     truth: np.ndarray,
     baseline_states: np.ndarray,
     noskip_states: np.ndarray,
+    baseline_reliable: np.ndarray | None = None,
+    noskip_reliable: np.ndarray | None = None,
+    baseline_final_state: np.ndarray | None = None,
+    noskip_final_state: np.ndarray | None = None,
     nodes: Sequence[str],
     process_vector: Sequence[float],
     effect_statistics: pd.DataFrame,
-    process_masks: np.ndarray | None = None,
     dpi: int = 600,
 ) -> dict[str, Any]:
     """Render the endpoint/process contrast and one fixed all-node pixel trajectory."""
@@ -352,6 +540,22 @@ def render_pixel_fate_figure(
     expected = (8, *truth_array.shape)
     if image_array.shape != truth_array.shape or baseline.shape != expected or noskip.shape != expected:
         raise ValueError("image, truth, and both eight-node paths must share one spatial grid")
+    baseline_reliability = (
+        np.ones((7, *truth_array.shape), dtype=bool)
+        if baseline_reliable is None
+        else np.asarray(baseline_reliable)
+    )
+    noskip_reliability = (
+        np.ones((7, *truth_array.shape), dtype=bool)
+        if noskip_reliable is None
+        else np.asarray(noskip_reliable)
+    )
+    baseline_final = (
+        baseline[-1] if baseline_final_state is None else np.asarray(baseline_final_state)
+    )
+    noskip_final = (
+        noskip[-1] if noskip_final_state is None else np.asarray(noskip_final_state)
+    )
     vector = np.asarray(tuple(process_vector), dtype=np.float64)
     if vector.shape != (7,) or not np.isfinite(vector).all():
         raise ValueError("process_vector must contain seven finite transition values")
@@ -386,8 +590,11 @@ def render_pixel_fate_figure(
         truth=truth_array,
         baseline_states=baseline,
         noskip_states=noskip,
+        baseline_reliable=baseline_reliability,
+        noskip_reliable=noskip_reliability,
+        baseline_final_state=baseline_final,
+        noskip_final_state=noskip_final,
         nodes=node_names,
-        process_masks=process_masks,
         language=language,
     )
     png_path, pdf_path = save_publication_figure(figure, output_base, dpi=dpi)

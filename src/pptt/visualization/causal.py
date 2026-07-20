@@ -13,12 +13,14 @@ import numpy as np
 import pandas as pd
 
 from pptt.visualization.common import configure_figure_style, save_publication_figure
-from pptt.visualization.flagship import BRATS_CLASS_COLORS, segmentation_overlay
 
 
 SEED_COLORS = {42: "#2563A6", 123: "#D97706", 3407: "#16897C"}
-RETAINED_COLOR = "#0F766E"
-LOST_COLOR = "#D13C64"
+SEED_MARKERS = {42: "o", 123: "s", 3407: "^"}
+SEED_LINESTYLES = {42: "-", 123: "--", 3407: "-."}
+RETAINED_COLOR = "#78B7B2"
+LOST_COLOR = "#E07A2D"
+RECOVERED_COLOR = "#007C83"
 
 
 def display_channel(image: np.ndarray, *, channel_index: int) -> np.ndarray:
@@ -92,6 +94,38 @@ def causal_event_map(
     return events
 
 
+def comparative_causal_event_map(
+    states: np.ndarray,
+    corrupt_states: np.ndarray,
+    truth: np.ndarray,
+    target_mask: np.ndarray,
+    *,
+    transition_index: int,
+    show_recovery: bool,
+) -> np.ndarray:
+    """Encode retained, lost and corruption-reversed target pixels."""
+    current = causal_event_map(
+        states,
+        truth,
+        target_mask,
+        transition_index=transition_index,
+    )
+    corrupt = causal_event_map(
+        corrupt_states,
+        truth,
+        target_mask,
+        transition_index=transition_index,
+    )
+    retained = current == 1
+    lost = current == 2
+    recovered = retained & (corrupt == 2) & bool(show_recovery)
+    events = np.zeros_like(current)
+    events[retained] = 1
+    events[lost] = 2
+    events[recovered] = 3
+    return events
+
+
 def _roi_bounds(mask: np.ndarray, *, margin: int = 8) -> tuple[slice, slice]:
     selected = np.asarray(mask)
     if selected.ndim != 2 or selected.dtype != np.bool_ or not selected.any():
@@ -124,20 +158,28 @@ def _draw_reference(
     roi: tuple[slice, slice],
     language: str,
 ) -> None:
-    background = segmentation_overlay(
-        _normalized_grayscale(image),
-        truth,
-        colors=BRATS_CLASS_COLORS,
-        alpha=0.48,
+    axis.imshow(
+        _normalized_grayscale(image)[roi],
+        cmap="gray",
+        vmin=0.0,
+        vmax=1.0,
+        interpolation="nearest",
     )
-    axis.imshow(background[roi], interpolation="nearest")
+    tumor = truth[roi] > 0
+    if tumor.any() and np.any(~tumor):
+        axis.contour(
+            tumor.astype(np.uint8),
+            levels=[0.5],
+            colors=["white"],
+            linewidths=0.8,
+        )
     target = target_mask[roi]
-    if target.any():
+    if target.any() and np.any(~target):
         axis.contour(
             target.astype(np.uint8),
             levels=[0.5],
-            colors=["white"],
-            linewidths=1.2,
+            colors=[RECOVERED_COLOR],
+            linewidths=1.25,
         )
     axis.set_title(
         "固定持续纠正像素" if language == "zh" else "Fixed persistent-correction set",
@@ -154,29 +196,41 @@ def _draw_condition(
     truth: np.ndarray,
     target_mask: np.ndarray,
     states: np.ndarray,
+    corrupt_states: np.ndarray,
     transition_index: int,
     roi: tuple[slice, slice],
     title: str,
+    show_recovery: bool,
 ) -> float:
     grayscale = _normalized_grayscale(image)[roi]
     axis.imshow(grayscale, cmap="gray", vmin=0.0, vmax=1.0, interpolation="nearest")
-    events = causal_event_map(
+    events = comparative_causal_event_map(
         states,
+        corrupt_states,
         truth,
         target_mask,
         transition_index=transition_index,
+        show_recovery=show_recovery,
     )[roi]
     masked = np.ma.masked_where(events == 0, events)
     axis.imshow(
         masked,
-        cmap=ListedColormap([RETAINED_COLOR, LOST_COLOR]),
+        cmap=ListedColormap([RETAINED_COLOR, LOST_COLOR, RECOVERED_COLOR]),
         vmin=1,
-        vmax=2,
-        alpha=0.78,
+        vmax=3,
+        alpha=0.86,
         interpolation="nearest",
     )
+    tumor = truth[roi] > 0
+    if tumor.any() and np.any(~tumor):
+        axis.contour(
+            tumor.astype(np.uint8),
+            levels=[0.5],
+            colors=["white"],
+            linewidths=0.65,
+    )
     target_count = int(np.count_nonzero(events))
-    q_value = float(np.count_nonzero(events == 1) / target_count)
+    q_value = float(np.count_nonzero(np.isin(events, (1, 3))) / target_count)
     axis.set_title(f"{title}\nQ = {q_value:.2f}", fontsize=8.3, pad=3)
     axis.axis("off")
     return q_value
@@ -200,7 +254,15 @@ def _draw_dose(axis: plt.Axes, dose: pd.DataFrame, *, language: str) -> None:
         low = ordered.ci_low.to_numpy(dtype=float)
         high = ordered.ci_high.to_numpy(dtype=float)
         axis.fill_between(x, low, high, color=color, alpha=0.12, linewidth=0)
-        axis.plot(x, y, color=color, marker="o", markersize=4.3, label=f"seed {seed}")
+        axis.plot(
+            x,
+            y,
+            color=color,
+            marker=SEED_MARKERS.get(int(seed), "o"),
+            linestyle=SEED_LINESTYLES.get(int(seed), "-"),
+            markersize=4.3,
+            label=f"seed {seed}",
+        )
         axis.text(
             x[-1] + 0.025,
             y[-1],
@@ -226,6 +288,7 @@ def _draw_effects(axis: plt.Axes, statistics: pd.DataFrame, *, language: str) ->
         "ci_low",
         "ci_high",
         "paired_cohens_d",
+        "patient_count",
     }
     if not required.issubset(statistics.columns):
         raise ValueError("causal statistics table lacks required columns")
@@ -266,7 +329,16 @@ def _draw_effects(axis: plt.Axes, statistics: pd.DataFrame, *, language: str) ->
                 edgecolors="white",
                 linewidths=0.6,
                 s=34,
+                marker=SEED_MARKERS.get(seed, "o"),
                 zorder=4,
+            )
+            axis.text(
+                float(row.ci_high) * 100.0 + 0.55,
+                y,
+                f"n={int(row.patient_count)}",
+                fontsize=6.7,
+                va="center",
+                color="#52606D",
             )
     axis.axvline(0.0, color="#4B5563", linewidth=0.8, linestyle="--")
     axis.set_yticks(y_base, [labels[value] for value in order])
@@ -286,6 +358,8 @@ def _draw_effects(axis: plt.Axes, statistics: pd.DataFrame, *, language: str) ->
         )
         for seed in (42, 123, 3407)
     ]
+    for handle, seed in zip(handles, (42, 123, 3407), strict=True):
+        handle.set_marker(SEED_MARKERS[seed])
     axis.legend(handles=handles, frameon=False, loc="lower right", fontsize=7.2)
 
 
@@ -365,9 +439,11 @@ def render_causal_result_figure(
             truth=truth,
             target_mask=target_mask,
             states=np.asarray(condition_states[condition]),
+            corrupt_states=np.asarray(condition_states["corrupt"]),
             transition_index=transition_index,
             roi=roi,
             title=condition_labels[condition],
+            show_recovery=condition in {"restore_target", "restore_control"},
         )
     dose_axis = figure.add_subplot(outer[1])
     _draw_dose(dose_axis, dose, language=language)
@@ -377,19 +453,24 @@ def render_causal_result_figure(
     figure.text(0.548, 0.955, "b", fontsize=11, fontweight="bold")
     figure.text(0.765, 0.955, "c", fontsize=11, fontweight="bold")
     event_labels = (
-        ("持续保留", "干预后丢失")
+        ("持续保留", "干预后丢失", "相对破坏条件恢复")
         if language == "zh"
-        else ("Persistently retained", "Lost after intervention")
+        else (
+            "Persistently retained",
+            "Lost after intervention",
+            "Recovered from corruption",
+        )
     )
     figure.legend(
         handles=[
             Patch(facecolor=RETAINED_COLOR, label=event_labels[0]),
             Patch(facecolor=LOST_COLOR, label=event_labels[1]),
+            Patch(facecolor=RECOVERED_COLOR, label=event_labels[2]),
         ],
         frameon=False,
         loc="lower left",
         bbox_to_anchor=(0.185, 0.015),
-        ncol=2,
+        ncol=3,
         fontsize=7.5,
     )
     return save_publication_figure(figure, output_base, dpi=dpi)
@@ -398,6 +479,7 @@ def render_causal_result_figure(
 __all__ = [
     "bootstrap_mean_interval",
     "causal_event_map",
+    "comparative_causal_event_map",
     "display_channel",
     "render_causal_result_figure",
 ]
