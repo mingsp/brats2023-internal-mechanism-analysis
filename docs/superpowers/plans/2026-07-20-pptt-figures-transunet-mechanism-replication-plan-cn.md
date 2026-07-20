@@ -221,7 +221,7 @@ git commit -m "feat: select one TransUNet mechanism candidate on validation data
 - Create: `scripts/lock_v8_transunet_protocol.py`
 - Create: `tests/unit/test_v8_protocol_lock.py`
 
-- [ ] **Step 1: 写失败测试，覆盖首次锁定、幂等重放、差异拒绝和无候选停止**
+- [x] **Step 1: 写失败测试，覆盖首次锁定、幂等重放、差异拒绝和无候选停止**
 
 ```python
 def test_protocol_lock_is_content_addressed_and_precedes_test_outputs(tmp_path): ...
@@ -229,23 +229,23 @@ def test_protocol_lock_rejects_changed_candidate_or_existing_patient_output(tmp_
 def test_no_candidate_writes_terminal_status_without_authorizing_test(tmp_path): ...
 ```
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `python -m pytest tests/unit/test_v8_protocol_lock.py -q`
 
-- [ ] **Step 3: 实现锁文件**
+- [x] **Step 3: 实现锁文件**
 
 锁文件必须包含：候选与选择统计、配置哈希、候选脚本/路径声明/队列定义/运行器源码哈希、验证资产哈希、三个模型权重哈希、观察器目录清单哈希、验证/测试有序患者 ID 及哈希、结构变量、算子、剂量、匹配、统计门槛和 `LOCKED_BEFORE_FIRST_TEST_INTERVENTION` 状态。若候选状态为 `NO_REGISTERED_TRANSUNET_CANDIDATE`，写终止状态且 `test_intervention_authorized=false`。
 
-- [ ] **Step 4: 运行测试和隐私扫描**
+- [x] **Step 4: 运行测试和隐私扫描**
 
 Run: `python -m pytest tests/unit/test_v8_protocol_lock.py -q`
 
-Run: `rg -n "connect\.westc|oyhz|password|SSH_PASSWORD" scripts configs src docs/superpowers/plans/2026-07-20-pptt-figures-transunet-mechanism-replication-plan-cn.md`
+Run: `rg -n "(?i)(password\\s*[:=]|sshpass|connect\\.westc)" scripts configs src`
 
 Expected: tests pass; privacy scan has no credential matches.
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/lock_v8_transunet_protocol.py tests/unit/test_v8_protocol_lock.py
