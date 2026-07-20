@@ -21,8 +21,8 @@ from pptt.causal_abstraction.interventions import (
     bilinear_resize_rows,
     minimum_norm_state_exchange,
     project_feature_edit,
-    stack_observer_weights,
-    stack_restart_logit_deltas,
+    stack_observer_contrast_weights,
+    stack_restart_logit_contrasts,
 )
 from pptt.causal_abstraction.matching import MatchingRules, match_natural_sources
 from pptt.causal_abstraction.planning import (
@@ -266,7 +266,7 @@ def _observer_weight_stack(
         )
         for seed in EXPECTED_OBSERVER_SEEDS
     )
-    return stack_observer_weights(weights)
+    return stack_observer_contrast_weights(weights)
 
 
 def _boundary_distance(truth: np.ndarray, truth_class: int) -> np.ndarray:
@@ -597,7 +597,7 @@ def _operator_audits(
             )
             base_logits = base_logits.permute(1, 0, 2).to(torch.float64)
             source_logits = source_logits.permute(1, 0, 2).to(torch.float64)
-            stacked_delta = stack_restart_logit_deltas(source_logits, base_logits)
+            stacked_delta = stack_restart_logit_contrasts(source_logits, base_logits)
             stacked_weight = _observer_weight_stack(
                 runtime.observers[node],
                 dtype=torch.float64,

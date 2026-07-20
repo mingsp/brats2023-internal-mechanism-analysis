@@ -12,7 +12,9 @@ from pptt.causal_abstraction.interventions import (
     equal_norm_nullspace_control,
     minimum_norm_state_exchange,
     project_feature_edit,
+    stack_observer_contrast_weights,
     stack_observer_weights,
+    stack_restart_logit_contrasts,
     stack_restart_logit_deltas,
 )
 
@@ -186,6 +188,51 @@ def test_stacked_restart_operator_reconstructs_every_observer_logit_delta():
         resize_rows @ exchange.delta_h @ stacked_weight.T
     ).reshape(2, 3, 2).permute(1, 0, 2)
     torch.testing.assert_close(reconstructed, source_logits, rtol=0, atol=1.0e-10)
+    assert exchange.target_max_abs_error <= 1.0e-10
+
+
+def test_contrast_exchange_preserves_source_decisions_without_common_mode():
+    restart_weights = (
+        torch.tensor(
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            dtype=torch.float64,
+        ),
+        torch.tensor(
+            [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]],
+            dtype=torch.float64,
+        ),
+    )
+    base_logits = torch.tensor(
+        [[[0.0, 1.0, 2.0]], [[2.0, 1.0, 0.0]]],
+        dtype=torch.float64,
+    )
+    source_logits = torch.tensor(
+        [[[101.0, 99.0, 105.0]], [[-46.0, -53.0, -44.0]]],
+        dtype=torch.float64,
+    )
+    weight = stack_observer_contrast_weights(restart_weights)
+    target = stack_restart_logit_contrasts(source_logits, base_logits)
+
+    exchange = minimum_norm_state_exchange(
+        torch.ones((1, 1), dtype=torch.float64),
+        weight,
+        target,
+        rcond=1.0e-7,
+    )
+    reconstructed = (
+        base_logits
+        + exchange.reconstructed_delta_logits.reshape(1, 2, 3)
+        .permute(1, 0, 2)
+    )
+
+    torch.testing.assert_close(
+        target.mean(dim=1),
+        torch.zeros(1, dtype=torch.float64),
+        rtol=0,
+        atol=1.0e-12,
+    )
+    assert torch.equal(reconstructed.argmax(dim=2), source_logits.argmax(dim=2))
+    assert int(torch.linalg.matrix_rank(weight)) == 2
     assert exchange.target_max_abs_error <= 1.0e-10
 
 

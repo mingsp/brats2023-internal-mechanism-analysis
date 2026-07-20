@@ -13,6 +13,8 @@ from pptt.causal_abstraction.interventions import (
     equal_norm_nullspace_control,
     minimum_norm_state_exchange,
     project_feature_edit,
+    stack_observer_contrast_weights,
+    stack_restart_logit_contrasts,
 )
 from pptt.causal_abstraction.kernels import (
     TransitionProcess,
@@ -87,6 +89,8 @@ __all__ = [
     "project_feature_edit",
     "relationship_states",
     "run_state_exchange",
+    "stack_observer_contrast_weights",
+    "stack_restart_logit_contrasts",
     "structural_process_contrast",
     "summarize_dose_direction",
     "summarize_intervention_specificity",

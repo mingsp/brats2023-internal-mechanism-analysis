@@ -139,6 +139,23 @@ def stack_observer_weights(weights: Sequence[torch.Tensor]) -> torch.Tensor:
     return torch.cat(matrices, dim=0)
 
 
+def stack_observer_contrast_weights(
+    weights: Sequence[torch.Tensor],
+) -> torch.Tensor:
+    """Stack observer weights after removing the decision-invariant class mode."""
+
+    matrices = tuple(
+        _validated_matrix(value, name=f"observer_weight[{index}]")
+        for index, value in enumerate(weights)
+    )
+    if len(matrices) < 2:
+        raise ValueError("at least two observer restarts are required")
+    centered = tuple(
+        matrix - matrix.mean(dim=0, keepdim=True) for matrix in matrices
+    )
+    return stack_observer_weights(centered)
+
+
 def stack_restart_logit_deltas(
     source_logits: torch.Tensor,
     base_logits: torch.Tensor,
@@ -167,6 +184,38 @@ def stack_restart_logit_deltas(
     if source.shape[0] < 2 or source.shape[1] == 0 or source.shape[2] < 2:
         raise ValueError("restart logits require multiple restarts, targets, and classes")
     return (source - base).permute(1, 0, 2).reshape(source.shape[1], -1)
+
+
+def stack_restart_logit_contrasts(
+    source_logits: torch.Tensor,
+    base_logits: torch.Tensor,
+) -> torch.Tensor:
+    """Stack class-centered deltas that preserve every restart's decision."""
+
+    source = source_logits
+    base = base_logits
+    if (
+        not isinstance(source, torch.Tensor)
+        or not isinstance(base, torch.Tensor)
+        or source.ndim != 3
+        or base.shape != source.shape
+    ):
+        raise ValueError(
+            "source_logits and base_logits must share restart x target x class shape"
+        )
+    if (
+        not source.is_floating_point()
+        or source.dtype != base.dtype
+        or source.device != base.device
+        or not torch.isfinite(source).all()
+        or not torch.isfinite(base).all()
+    ):
+        raise ValueError("restart logits must be finite and share dtype and device")
+    if source.shape[0] < 2 or source.shape[1] == 0 or source.shape[2] < 2:
+        raise ValueError("restart logits require multiple restarts, targets, and classes")
+    delta = source - base
+    contrast = delta - delta.mean(dim=2, keepdim=True)
+    return contrast.permute(1, 0, 2).reshape(source.shape[1], -1)
 
 
 def _pseudoinverse(matrix: torch.Tensor, *, rcond: float) -> torch.Tensor:
@@ -335,6 +384,8 @@ __all__ = [
     "equal_norm_nullspace_control",
     "minimum_norm_state_exchange",
     "project_feature_edit",
+    "stack_observer_contrast_weights",
     "stack_observer_weights",
+    "stack_restart_logit_contrasts",
     "stack_restart_logit_deltas",
 ]

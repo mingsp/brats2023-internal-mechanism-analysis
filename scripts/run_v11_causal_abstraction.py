@@ -23,8 +23,8 @@ from pptt.causal_abstraction.interventions import (
     equal_norm_nullspace_control,
     minimum_norm_state_exchange,
     project_feature_edit,
-    stack_observer_weights,
-    stack_restart_logit_deltas,
+    stack_observer_contrast_weights,
+    stack_restart_logit_contrasts,
 )
 from pptt.causal_abstraction.runtime import CounterfactualTrace, run_state_exchange
 from pptt.causal_abstraction.states import relationship_states
@@ -848,7 +848,7 @@ def _restart_logits_at_indices(
 def _stacked_observer_weight(
     observers: Mapping[int, LinearObserver],
 ) -> torch.Tensor:
-    return stack_observer_weights(
+    return stack_observer_contrast_weights(
         tuple(
             observers[seed]
             .projection.weight[:, :, 0, 0]
@@ -1066,7 +1066,7 @@ class FormalPatientProcessor:
             dim=1,
         )
         stacked_weight = _stacked_observer_weight(self.runtime.observers[node])
-        stacked_delta = stack_restart_logit_deltas(source_logits, base_logits)
+        stacked_delta = stack_restart_logit_contrasts(source_logits, base_logits)
         resize_rows = bilinear_resize_rows(
             native_shape,
             tuple(int(value) for value in truth.shape),
