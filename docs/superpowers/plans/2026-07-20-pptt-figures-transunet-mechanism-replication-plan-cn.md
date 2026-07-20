@@ -371,22 +371,22 @@ git commit -m "feat: rebuild focused PPTT paper figures from formal data"
 - Create: `scripts/server/run_v8_transunet_pipeline.sh`
 - Create: `tests/unit/test_v8_progress_monitor.py`
 
-- [ ] **Step 1: 写失败测试，覆盖未开始、运行、失败、无候选和完成状态**
+- [x] **Step 1: 写失败测试，覆盖未开始、运行、失败、无候选和完成状态**
 
 ```python
 def test_progress_summary_reports_phase_counts_and_dynamic_eta(tmp_path): ...
 def test_progress_summary_surfaces_failed_seed_without_restarting(tmp_path): ...
 ```
 
-- [ ] **Step 2: 实现只读监控器**
+- [x] **Step 2: 实现只读监控器**
 
 输出：当前阶段、候选状态、三个种子各 `completed/250`、总进度、最近患者、失败、GPU/磁盘由外部命令补充的位置、近期吞吐和动态 ETA。`--watch --interval 30` 持续刷新；监控器不得启动、停止或修改实验。
 
-- [ ] **Step 3: 实现服务器流水线**
+- [x] **Step 3: 实现服务器流水线**
 
 流水线依次执行：三个验证集轨迹 worker 并行 → 候选统计 → 协议锁 → 若授权则三个测试干预 worker 并行 → 汇总。每个 worker 独立日志和输出目录，失败立即使流水线非零退出；无候选为预注册终止而非执行失败。脚本只读取 `PPTT_ASSET_ROOT` 和工作目录参数，不含连接信息。
 
-- [ ] **Step 4: 运行测试与 Shell 静态检查**
+- [x] **Step 4: 运行测试与 Shell 静态检查**
 
 Run: `python -m pytest tests/unit/test_v8_progress_monitor.py -q`
 
