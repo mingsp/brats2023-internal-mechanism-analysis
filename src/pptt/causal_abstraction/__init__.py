@@ -1,5 +1,10 @@
 """Cross-architecture causal abstraction for pixel decision processes."""
 
+from pptt.causal_abstraction.gates import (
+    ConclusionStatus,
+    GateReport,
+    evaluate_causal_abstraction_gate,
+)
 from pptt.causal_abstraction.interventions import (
     StateExchange,
     apply_flat_feature_edit,
@@ -49,10 +54,12 @@ from pptt.causal_abstraction.states import (
 )
 
 __all__ = [
+    "ConclusionStatus",
     "CounterfactualTrace",
     "CrossArchitectureTransfer",
     "DoseDirectionSummary",
     "InterventionSpecificitySummary",
+    "GateReport",
     "MatchingRules",
     "PairedFidelityDifference",
     "PathFidelitySummary",
@@ -70,6 +77,7 @@ __all__ = [
     "cross_architecture_transfer",
     "equal_norm_nullspace_control",
     "estimate_patient_equal_process",
+    "evaluate_causal_abstraction_gate",
     "evaluate_history_dependence",
     "minimum_norm_state_exchange",
     "match_natural_sources",
