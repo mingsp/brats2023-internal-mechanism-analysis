@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import torch
 
+from pptt.causal_abstraction.interventions import bilinear_resize_rows
 from pptt.causal_abstraction.planning import (
     build_balanced_base_requests,
     prune_matches_to_independent_resize_rows,
@@ -105,6 +107,43 @@ def test_rank_pruning_removes_duplicate_resize_rows():
     assert 1 <= len(retained) <= 3
     assert diagnostics.loc[0, "retained_count"] == len(retained)
     assert diagnostics.loc[0, "spatial_rank"] == len(retained)
+    assert diagnostics.loc[0, "discarded_overlap_count"] == 3 - len(retained)
+
+
+def test_pruning_makes_selected_resize_rows_orthogonal():
+    candidates = _candidate_frame().iloc[:3].copy()
+    candidates.loc[:, "output_index"] = [0, 1, 15]
+    matches = pd.DataFrame(
+        {
+            "status": ["MATCHED"] * 3,
+            "patient_id": ["p1"] * 3,
+            "node": ["down4"] * 3,
+            "base_row_id": candidates["row_id"].tolist(),
+        }
+    )
+
+    retained, diagnostics = prune_matches_to_independent_resize_rows(
+        matches,
+        candidates,
+        output_shape=(4, 4),
+    )
+    selected = candidates.set_index("row_id").loc[retained["base_row_id"]]
+    rows = bilinear_resize_rows(
+        (2, 2),
+        (4, 4),
+        torch.tensor(selected["output_index"].tolist()),
+        dtype=torch.float64,
+    )
+    gram = rows @ rows.T
+
+    torch.testing.assert_close(
+        gram - torch.diag(torch.diag(gram)),
+        torch.zeros_like(gram),
+        rtol=0,
+        atol=0,
+    )
+    assert retained["base_row_id"].tolist() == ["r0", "r2"]
+    assert diagnostics.loc[0, "discarded_overlap_count"] == 1
 
 
 def test_rank_pruning_uses_the_solver_cutoff_for_near_dependent_rows():

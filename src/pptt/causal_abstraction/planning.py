@@ -210,7 +210,7 @@ def prune_matches_to_independent_resize_rows(
     output_shape: tuple[int, int],
     rcond: float = 1.0e-7,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Keep a deterministic maximal prefix that increases resize-row rank."""
+    """Keep a deterministic maximal set with disjoint resize support."""
 
     required_matches = {"status", "patient_id", "node", "base_row_id"}
     required_candidates = {"row_id", "native_h", "native_w", "output_index"}
@@ -239,6 +239,7 @@ def prune_matches_to_independent_resize_rows(
                     "matched_count": 0,
                     "retained_count": 0,
                     "spatial_rank": 0,
+                    "discarded_overlap_count": 0,
                 }
             )
             continue
@@ -253,7 +254,8 @@ def prune_matches_to_independent_resize_rows(
             raise ValueError("one patient/node plan contains multiple native shapes")
         native_shape = next(iter(native_shapes))
         accepted_rows: list[torch.Tensor] = []
-        rank = 0
+        used_support: set[int] = set()
+        discarded_overlap_count = 0
         for _, match in matched.iterrows():
             base = candidate_index.loc[str(match["base_row_id"])]
             row = bilinear_resize_rows(
@@ -262,18 +264,29 @@ def prune_matches_to_independent_resize_rows(
                 torch.tensor([int(base["output_index"])], dtype=torch.int64),
                 dtype=torch.float64,
             )
-            candidate_matrix = torch.cat((*accepted_rows, row), dim=0)
-            candidate_rank = int(
-                torch.linalg.matrix_rank(
-                    candidate_matrix,
-                    rtol=float(rcond),
-                ).item()
+            support = set(
+                torch.nonzero(row[0], as_tuple=False).flatten().tolist()
             )
-            if candidate_rank <= rank:
+            if not support:
+                raise ValueError("a resize row has empty native support")
+            if not used_support.isdisjoint(support):
+                discarded_overlap_count += 1
                 continue
             retained.append(match)
             accepted_rows.append(row)
-            rank = candidate_rank
+            used_support.update(support)
+        if accepted_rows:
+            selected_matrix = torch.cat(accepted_rows, dim=0)
+            rank = int(
+                torch.linalg.matrix_rank(
+                    selected_matrix,
+                    rtol=float(rcond),
+                ).item()
+            )
+            if rank != len(accepted_rows):
+                raise ValueError("disjoint resize support did not yield full row rank")
+        else:
+            rank = 0
         diagnostics.append(
             {
                 "patient_id": str(patient_id),
@@ -281,6 +294,7 @@ def prune_matches_to_independent_resize_rows(
                 "matched_count": int(len(matched)),
                 "retained_count": len(accepted_rows),
                 "spatial_rank": rank,
+                "discarded_overlap_count": discarded_overlap_count,
             }
         )
     retained_frame = (
