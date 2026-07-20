@@ -69,6 +69,12 @@ def test_progress_summary_reports_phase_counts_and_dynamic_eta(tmp_path: Path) -
     for seed in SEEDS:
         _validation_trace(workspace, seed, "patient_a")
         _validation_trace(workspace, seed, "patient_b")
+    temporary = (
+        workspace
+        / "results/v8/validation_workers/seed_42"
+        / "transunet_r50_vit_b16/seed_42/val/case_traces/.patient_c.tmp.npz"
+    )
+    temporary.write_bytes(b"incomplete")
     _write_json(
         workspace / "results/v8/validation_candidate/candidate_registration.json",
         {

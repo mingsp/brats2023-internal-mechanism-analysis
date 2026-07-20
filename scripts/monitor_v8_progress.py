@@ -41,8 +41,14 @@ def _load_json(path: Path, errors: list[str]) -> dict[str, Any] | None:
     return payload
 
 
+def _completed_artifacts(path: Path, pattern: str) -> list[Path]:
+    if not path.is_dir():
+        return []
+    return [item for item in path.glob(pattern) if not item.name.startswith(".")]
+
+
 def _artifact_count(path: Path, pattern: str) -> tuple[int, str | None]:
-    artifacts = list(path.glob(pattern)) if path.is_dir() else []
+    artifacts = _completed_artifacts(path, pattern)
     if not artifacts:
         return 0, None
     latest = max(artifacts, key=lambda item: item.stat().st_mtime)
@@ -50,7 +56,7 @@ def _artifact_count(path: Path, pattern: str) -> tuple[int, str | None]:
 
 
 def _artifact_eta(path: Path, pattern: str, *, expected: int) -> tuple[float, float] | None:
-    artifacts = list(path.glob(pattern)) if path.is_dir() else []
+    artifacts = _completed_artifacts(path, pattern)
     if len(artifacts) < 2 or len(artifacts) >= expected:
         return None
     timestamps = sorted(item.stat().st_mtime for item in artifacts)
