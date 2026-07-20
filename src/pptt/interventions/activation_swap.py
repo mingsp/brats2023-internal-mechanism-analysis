@@ -82,23 +82,47 @@ def spatially_shift_activation(
 def transform_module_input(
     module: nn.Module,
     *,
-    argument_index: int,
+    argument_index: int | None = None,
+    argument_name: str | None = None,
     transform: Callable[[torch.Tensor], torch.Tensor],
 ) -> Iterator[None]:
-    if argument_index < 0:
+    if (argument_index is None) == (argument_name is None):
+        raise ValueError("provide exactly one input argument selector")
+    if argument_index is not None and argument_index < 0:
         raise ValueError("argument_index must be nonnegative")
+    if argument_name is not None and not argument_name:
+        raise ValueError("argument_name must be nonempty")
 
-    def hook(_module: nn.Module, inputs: tuple[object, ...]):
-        if argument_index >= len(inputs) or not isinstance(
-            inputs[argument_index],
-            torch.Tensor,
+    if argument_name is not None:
+        def keyword_hook(
+            _module: nn.Module,
+            inputs: tuple[object, ...],
+            kwargs: dict[str, object],
         ):
-            raise ValueError("Selected module input is not a tensor")
-        changed = list(inputs)
-        changed[argument_index] = transform(inputs[argument_index])
-        return tuple(changed)
+            if argument_name not in kwargs or not isinstance(
+                kwargs[argument_name],
+                torch.Tensor,
+            ):
+                raise ValueError("Selected keyword module input is not a tensor")
+            changed_kwargs = dict(kwargs)
+            changed_kwargs[argument_name] = transform(kwargs[argument_name])
+            return inputs, changed_kwargs
 
-    handle = module.register_forward_pre_hook(hook)
+        handle = module.register_forward_pre_hook(keyword_hook, with_kwargs=True)
+    else:
+        assert argument_index is not None
+
+        def positional_hook(_module: nn.Module, inputs: tuple[object, ...]):
+            if argument_index >= len(inputs) or not isinstance(
+                inputs[argument_index],
+                torch.Tensor,
+            ):
+                raise ValueError("Selected positional module input is not a tensor")
+            changed = list(inputs)
+            changed[argument_index] = transform(inputs[argument_index])
+            return tuple(changed)
+
+        handle = module.register_forward_pre_hook(positional_hook)
     try:
         yield
     finally:

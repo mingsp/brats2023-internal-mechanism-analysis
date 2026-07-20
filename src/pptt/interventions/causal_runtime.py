@@ -15,7 +15,8 @@ def trace_spatial_intervention(
     truth: np.ndarray,
     *,
     module: nn.Module,
-    argument_index: int,
+    argument_index: int | None = None,
+    argument_name: str | None = None,
     restore_mask: torch.Tensor,
     shift_yx: tuple[int, int],
     alpha: float,
@@ -25,6 +26,7 @@ def trace_spatial_intervention(
     with transform_module_input(
         module,
         argument_index=argument_index,
+        argument_name=argument_name,
         transform=lambda activation: spatial_corrupt_restore(
             activation,
             restore_mask=restore_mask,

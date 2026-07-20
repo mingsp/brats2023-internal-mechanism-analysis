@@ -89,10 +89,12 @@ git commit -m "feat: define output-anchored direct path cohorts"
 
 **Files:**
 - Create: `src/pptt/interventions/transunet_paths.py`
+- Modify: `src/pptt/interventions/activation_swap.py`
+- Modify: `src/pptt/interventions/causal_runtime.py`
 - Create: `tests/unit/test_transunet_paths.py`
 - Modify: `tests/integration/test_activation_restore.py`
 
-- [ ] **Step 1: 写失败测试，检查拓扑顺序、唯一张量输入和非法路径拒绝**
+- [x] **Step 1: 写失败测试，检查拓扑顺序、唯一张量输入和非法路径拒绝**
 
 ```python
 def test_transunet_decoder_paths_match_real_forward_arguments():
@@ -106,13 +108,13 @@ def test_transunet_decoder_paths_match_real_forward_arguments():
     ]
 ```
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `python -m pytest tests/unit/test_transunet_paths.py -q`
 
 Expected: import failure.
 
-- [ ] **Step 3: 实现声明、点路径解析和运行时输入一致性审计**
+- [x] **Step 3: 实现声明、点路径解析和运行时输入一致性审计**
 
 ```python
 @dataclass(frozen=True)
@@ -134,13 +136,13 @@ def audit_path_activation_identity(adapter, path, image) -> dict[str, object]: .
 
 身份审计要求源模块输出与接收模块对应输入在形状、数据指针之外的逐元素数值上完全一致；四条路径均须通过，不能依据实验结果修改路径表。
 
-- [ ] **Step 4: 验证空间循环平移、完整恢复和钩子清理**
+- [x] **Step 4: 验证空间循环平移、完整恢复和钩子清理**
 
 Run: `python -m pytest tests/unit/test_transunet_paths.py tests/integration/test_activation_restore.py tests/integration/test_transunet_trace.py -q`
 
 Expected: all passed.
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/pptt/interventions/transunet_paths.py tests/unit/test_transunet_paths.py tests/integration/test_activation_restore.py
