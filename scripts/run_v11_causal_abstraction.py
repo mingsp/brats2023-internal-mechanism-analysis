@@ -897,6 +897,7 @@ class FormalPatientProcessor:
         norm_calibration: Mapping[str, Any],
         device: torch.device,
         dose_batch_size: int,
+        split: str = "test",
     ) -> None:
         self.runtime = runtime
         self.patient_plan_root = Path(patient_plan_root)
@@ -906,8 +907,11 @@ class FormalPatientProcessor:
         self.norm_calibration = norm_calibration
         self.device = device
         self.dose_batch_size = int(dose_batch_size)
+        self.split = str(split)
         if self.dose_batch_size <= 0:
             raise ValueError("dose_batch_size must be positive")
+        if not self.split:
+            raise ValueError("split must be non-empty")
 
     def _patient_plan(self, patient_id: str) -> dict[str, Any]:
         path = self.patient_plan_root / f"{patient_id}.json"
@@ -919,6 +923,7 @@ class FormalPatientProcessor:
             model=self.runtime.job.model,
             model_seed=self.runtime.job.seed,
             patient_id=patient_id,
+            split=self.split,
         )
         return payload
 

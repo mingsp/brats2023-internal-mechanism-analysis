@@ -159,6 +159,7 @@ def profile_v11_memory(
         norm_calibration=norm_calibration,
         device=device,
         dose_batch_size=int(dose_batch_size),
+        split=split,
     )
     try:
         torch.cuda.synchronize(device)
