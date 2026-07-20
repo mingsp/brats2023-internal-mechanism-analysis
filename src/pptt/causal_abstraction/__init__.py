@@ -15,6 +15,10 @@ from pptt.causal_abstraction.kernels import (
     evaluate_history_dependence,
     pool_architecture_processes,
 )
+from pptt.causal_abstraction.matching import (
+    MatchingRules,
+    match_natural_sources,
+)
 from pptt.causal_abstraction.runtime import (
     CounterfactualTrace,
     run_state_exchange,
@@ -29,6 +33,7 @@ from pptt.causal_abstraction.states import (
 
 __all__ = [
     "CounterfactualTrace",
+    "MatchingRules",
     "ProcessEvent",
     "RelationshipState",
     "StateExchange",
@@ -41,6 +46,7 @@ __all__ = [
     "estimate_patient_equal_process",
     "evaluate_history_dependence",
     "minimum_norm_state_exchange",
+    "match_natural_sources",
     "pool_architecture_processes",
     "process_events",
     "project_feature_edit",
