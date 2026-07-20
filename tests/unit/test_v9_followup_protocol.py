@@ -11,7 +11,10 @@ from scripts.run_v8_transunet_mechanism import resolve_registered_patient_ids
 from pptt.statistics.mechanism_replication import (
     select_feasible_registered_candidate,
 )
-from pptt.validation.v9_followup import derive_common_unintervened_cohort
+from pptt.validation.v9_followup import (
+    derive_common_unintervened_cohort,
+    derive_remaining_path_naive_cohort,
+)
 
 
 SEEDS = (42, 123, 3407)
@@ -227,3 +230,13 @@ def test_runner_uses_locked_subset_without_changing_split_inventory():
     )
 
     assert selected == ["p2", "p4"]
+
+
+def test_remaining_path_naive_cohort_excludes_every_v9_patient():
+    remaining = derive_remaining_path_naive_cohort(
+        ("p1", "p2", "p3", "p4"),
+        ("p2", "p4"),
+        expected_remaining_count=2,
+    )
+
+    assert remaining == ("p1", "p3")

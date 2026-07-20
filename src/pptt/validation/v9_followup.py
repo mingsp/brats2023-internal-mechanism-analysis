@@ -49,4 +49,31 @@ def derive_common_unintervened_cohort(
     return common
 
 
-__all__ = ["derive_common_unintervened_cohort"]
+def derive_remaining_path_naive_cohort(
+    all_patient_ids: Sequence[str],
+    previously_intervened_patient_ids: Sequence[str],
+    *,
+    expected_remaining_count: int,
+) -> tuple[str, ...]:
+    """Return the sorted test patients without prior intervention on this path."""
+    all_patients = tuple(sorted(str(value) for value in all_patient_ids))
+    previous = tuple(sorted(str(value) for value in previously_intervened_patient_ids))
+    if (
+        not all_patients
+        or len(all_patients) != len(set(all_patients))
+        or len(previous) != len(set(previous))
+        or any(not value for value in (*all_patients, *previous))
+    ):
+        raise ValueError("patient registries must contain unique nonempty ids")
+    if not set(previous).issubset(all_patients):
+        raise ValueError("previously intervened patients are outside the test registry")
+    remaining = tuple(sorted(set(all_patients) - set(previous)))
+    if len(remaining) != int(expected_remaining_count):
+        raise ValueError("remaining path-naive cohort differs from the registered count")
+    return remaining
+
+
+__all__ = [
+    "derive_common_unintervened_cohort",
+    "derive_remaining_path_naive_cohort",
+]

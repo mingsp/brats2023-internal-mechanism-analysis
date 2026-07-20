@@ -1,0 +1,57 @@
+name: v10_transunet_path_specific_confirmation
+experiment_id: v10
+model_matrix: manifests/model_matrix.yaml
+observer_root: results/v1_observers
+model: transunet_r50_vit_b16
+model_seeds: [42, 123, 3407]
+observer_seeds: [17, 29, 43]
+nodes: [down1, down2, down3, down4, up1, up2, up3, up4]
+discovery_split: val
+intervention_split: test
+validation:
+  candidate_root: results/v9_transunet_specificity/validation_candidate
+test_trace_root: results/v5_transunet
+v8_status: results/v8_transunet_mechanism/formal_test/v8_status.json
+v9_status: results/v9_transunet_specificity/formal_test/v9_status.json
+v9_protocol_lock: results/v9_transunet_specificity/v9_protocol_lock.json
+v9_formal_root: results/v9_transunet_specificity/formal_test
+formal_output_root: results/v10_transunet_path_confirmation/formal_test
+protocol_lock: results/v10_transunet_path_confirmation/v10_protocol_lock.json
+candidate_paths:
+  - bottleneck_to_up1
+  - skip_down3_to_up1
+  - skip_down2_to_up2
+  - skip_down1_to_up3
+truth_classes: [1, 2, 3]
+eligibility:
+  minimum_target_pixels_on_selected_slice: 32
+  minimum_target_feature_positions: 8
+  minimum_control_feature_positions: 8
+  minimum_candidate_patients_per_seed: 20
+  minimum_candidate_target_pixels_per_seed: 512
+intervention:
+  operator: spatial_cyclic_shift_with_local_clean_restore
+  feature_shift_yx: [2, 2]
+  restoration_alphas: [0.25, 0.50, 0.75, 1.00]
+  primary_alpha: 1.00
+matching:
+  same_truth_class: true
+  boundary_bin_edges: [1.5, 3.5, 7.5]
+  activation_norm_quantile_bins: 4
+statistics:
+  reconstruction_tolerance: 1.0e-10
+  activation_restore_tolerance: 1.0e-6
+  bootstrap_iterations: 10000
+  bootstrap_seed: 20260720
+  alpha: 0.016666666666666666
+  minimum_standardized_effect: 0.8
+  minimum_supported_seeds: 2
+  minimum_patient_monotonic_fraction: 0.8
+  multiplicity: holm_global_with_three_round_alpha_spending
+formal:
+  patient_registry_mode: protocol_lock_subset
+  expected_patient_count_per_seed: 224
+  minimum_evaluable_patients_per_endpoint_per_seed: 20
+  candidate_may_not_change_after_lock: true
+  thresholds_may_not_change_after_lock: true
+  test_is_single_confirmation_run: true
