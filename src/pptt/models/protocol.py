@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import torch
@@ -19,6 +21,40 @@ class ModelAdapter(nn.Module, ABC):
     @abstractmethod
     def checkpoint_module(self, name: str) -> nn.Module:
         raise NotImplementedError
+
+    @contextmanager
+    def transform_checkpoint_output(
+        self,
+        name: str,
+        transform: Callable[[torch.Tensor], torch.Tensor],
+    ) -> Iterator[None]:
+        """Temporarily replace one registered checkpoint output."""
+
+        module = self.checkpoint_module(name)
+
+        def hook(
+            _module: nn.Module,
+            _inputs: tuple[object, ...],
+            output: torch.Tensor,
+        ) -> torch.Tensor:
+            if not isinstance(output, torch.Tensor):
+                raise TypeError("checkpoint output must be a tensor")
+            changed = transform(output)
+            if not isinstance(changed, torch.Tensor):
+                raise TypeError("checkpoint transform must return a tensor")
+            if changed.shape != output.shape:
+                raise ValueError("checkpoint transform changed tensor shape")
+            if changed.dtype != output.dtype or changed.device != output.device:
+                raise ValueError(
+                    "checkpoint transform changed tensor dtype or device"
+                )
+            return changed
+
+        handle = module.register_forward_hook(hook)
+        try:
+            yield
+        finally:
+            handle.remove()
 
     @abstractmethod
     def randomization_module(self, name: str) -> nn.Module:

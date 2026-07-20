@@ -15,6 +15,10 @@ from pptt.causal_abstraction.kernels import (
     evaluate_history_dependence,
     pool_architecture_processes,
 )
+from pptt.causal_abstraction.runtime import (
+    CounterfactualTrace,
+    run_state_exchange,
+)
 from pptt.causal_abstraction.states import (
     ProcessEvent,
     RelationshipState,
@@ -24,6 +28,7 @@ from pptt.causal_abstraction.states import (
 )
 
 __all__ = [
+    "CounterfactualTrace",
     "ProcessEvent",
     "RelationshipState",
     "StateExchange",
@@ -40,4 +45,5 @@ __all__ = [
     "process_events",
     "project_feature_edit",
     "relationship_states",
+    "run_state_exchange",
 ]
