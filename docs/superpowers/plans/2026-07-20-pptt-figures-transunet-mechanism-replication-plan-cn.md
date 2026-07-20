@@ -158,7 +158,7 @@ git commit -m "feat: register auditable TransUNet intervention paths"
 - Modify: `scripts/run_v5_transunet.py`
 - Create: `scripts/select_v8_transunet_candidate.py`
 
-- [ ] **Step 1: 写失败测试，锁定“最多一条候选”和无候选停止语义**
+- [x] **Step 1: 写失败测试，锁定“最多一条候选”和无候选停止语义**
 
 ```python
 def test_selector_uses_cross_seed_minimum_effect_then_topology():
@@ -171,13 +171,13 @@ def test_selector_returns_explicit_no_candidate_status():
     assert selected == {"status": "NO_REGISTERED_TRANSUNET_CANDIDATE", ...}
 ```
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `python -m pytest tests/unit/test_mechanism_candidate_selection.py -q`
 
 Expected: import failure.
 
-- [ ] **Step 3: 实现患者级净恢复、全局 Holm 校正和确定性选择规则**
+- [x] **Step 3: 实现患者级净恢复、全局 Holm 校正和确定性选择规则**
 
 ```python
 def summarize_validation_candidates(patient_rows, *, required_seeds,
@@ -192,15 +192,15 @@ def select_registered_candidate(statistics_rows, coverage_rows, *,
 
 四条路径、三种子的 12 个检验共同执行 Holm 校正。候选要求三种子均值方向为正，至少两个种子同时满足覆盖、`CI_low > 0`、`Holm p < 0.05` 和预注册效应量；排序为最小跨种子效应降序、平均效应降序、拓扑序升序。
 
-- [ ] **Step 4: 写入 V8 配置并让既有 TransUNet 轨迹脚本支持通用 split 配置**
+- [x] **Step 4: 写入 V8 配置并让既有 TransUNet 轨迹脚本支持通用 split 配置**
 
 配置固定：验证集 125 人/种子，测试集 250 人/种子，四条路径，目标切片最少 32 个像素、特征位置和对照位置各 8 个，空间平移 `(2, 2)`，剂量 `[0, .25, .5, .75, 1]`，三模型种子和三观察器种子，bootstrap 10000，`alpha=.05`，最低标准化效应 `0.8`，最低支持种子数 `2`。`run_v5_transunet.py` 仅去除 V5 专属错误文案，使同一正式轨迹生成器可由 V8 验证集配置调用。
 
-- [ ] **Step 5: 实现只读取验证轨迹的选择脚本**
+- [x] **Step 5: 实现只读取验证轨迹的选择脚本**
 
 输出：`validation_candidate_patient_scores.parquet`、`validation_candidate_statistics.parquet`、`validation_candidate_coverage.parquet`、`candidate_registration.json`。脚本不得读取测试结果目录。
 
-- [ ] **Step 6: 验证测试与 CLI 帮助**
+- [x] **Step 6: 验证测试与 CLI 帮助**
 
 Run: `python -m pytest tests/unit/test_mechanism_candidate_selection.py tests/unit/test_transfer_segments.py -q`
 
@@ -208,7 +208,7 @@ Run: `python scripts/select_v8_transunet_candidate.py --help`
 
 Expected: tests pass; help exits 0.
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add src/pptt/statistics/mechanism_replication.py tests/unit/test_mechanism_candidate_selection.py configs/experiments/v8_transunet_mechanism_replication.yaml scripts/run_v5_transunet.py scripts/select_v8_transunet_candidate.py

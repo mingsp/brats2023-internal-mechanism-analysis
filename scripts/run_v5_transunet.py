@@ -343,7 +343,7 @@ def _run_job(
         img_size=int(model_config.get("img_size", 160)),
     )
     if tuple(adapter.checkpoint_names) != nodes:
-        raise ValueError("TransUNet checkpoint adapter does not match V5 declaration")
+        raise ValueError("TransUNet checkpoint adapter does not match the declaration")
     checkpoint_digest = adapter.load_checkpoint(job.checkpoint, map_location="cpu")
     if not admitted_nodes:
         return {
@@ -407,7 +407,7 @@ def _run_job(
         if resume and artifact_path.is_file():
             trace = load_case_trace(artifact_path)
             if trace.slice_ids != expected_slices:
-                raise ValueError(f"V5 case trace slices changed: {artifact_path}")
+                raise ValueError(f"TransUNet case trace slices changed: {artifact_path}")
         else:
             trace = _trace_patient(
                 tracer,
@@ -544,9 +544,11 @@ def main() -> int:
         jobs = [job for job in jobs if job.job_id in requested]
         missing = requested - {job.job_id for job in jobs}
         if missing:
-            raise ValueError(f"Requested V5 jobs are not configured: {sorted(missing)}")
+            raise ValueError(
+                f"Requested TransUNet jobs are not configured: {sorted(missing)}"
+            )
     if not jobs:
-        raise ValueError("V5 has no configured model jobs")
+        raise ValueError("TransUNet transfer has no configured model jobs")
     output_root = (
         args.output_root
         if args.output_root is not None
@@ -631,7 +633,10 @@ def main() -> int:
             if complete_count == len(statuses)
             else ("PENDING_ASSETS" if pending_count else "PARTIAL_OR_FAILED_TRANSFER")
         ),
-        "method_scope": "interface transfer only; no U-Net curve replication claim",
+        "method_scope": (
+            "PPTT trace transfer for the configuration-declared split; "
+            "no causal claim"
+        ),
         "jobs": statuses,
         "configured_job_count": len(statuses),
         "complete_transfer_job_count": complete_count,
