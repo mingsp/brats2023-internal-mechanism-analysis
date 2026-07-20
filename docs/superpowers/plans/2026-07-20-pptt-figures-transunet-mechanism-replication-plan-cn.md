@@ -261,7 +261,7 @@ git commit -m "feat: lock TransUNet mechanism replication before test interventi
 - Create: `tests/unit/test_v8_causal_gate.py`
 - Create: `tests/integration/test_v8_transunet_mechanism_smoke.py`
 
-- [ ] **Step 1: 写失败测试，覆盖四条件、剂量、匹配对照和门控**
+- [x] **Step 1: 写失败测试，覆盖四条件、剂量、匹配对照和门控**
 
 ```python
 def test_replication_gate_requires_necessity_restoration_specificity_dose_and_operator(): ...
@@ -269,23 +269,23 @@ def test_failed_specificity_cannot_authorize_mechanism_claim(): ...
 def test_smoke_restores_only_registered_receiver_argument(): ...
 ```
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `python -m pytest tests/unit/test_v8_causal_gate.py tests/integration/test_v8_transunet_mechanism_smoke.py -q`
 
-- [ ] **Step 3: 实现按种子运行器**
+- [x] **Step 3: 实现按种子运行器**
 
 每名测试患者只使用锁定路径：从正式测试轨迹构造直接路径持续纠正集合；选择目标像素最多且满足门槛的固定切片；映射至候选输入张量；运行 `Clean`、`Corrupt`、四个非零目标恢复剂量、等量匹配目标和等量匹配对照；主要结局为原模型最终输出在固定目标集合上的真实类别保持率。患者 JSON 与种子状态 JSON 必须原子写入，`--resume` 只能跳过内容哈希匹配的已完成患者。
 
-- [ ] **Step 4: 实现算子与锚点审计**
+- [x] **Step 4: 实现算子与锚点审计**
 
 逐患者记录：clean 与正式轨迹状态误差、完整恢复最大绝对误差、空间循环平移逐通道多重集合误差、运行前后钩子数、源输出与接收输入一致性。任一硬审计失败使种子状态为 `FAILED_AUDIT`，不得进入正式统计。
 
-- [ ] **Step 5: 实现患者统计、剂量汇总和结论门控**
+- [x] **Step 5: 实现患者统计、剂量汇总和结论门控**
 
 必要性=`Q_clean-Q_corrupt`；恢复性=`Q_target-Q_corrupt`；特异性=`Q_matched_target-Q_matched_control`。每个端点按种子进行患者配对 bootstrap、Wilcoxon、Cohen's dz，并对 9 个端点检验全局 Holm 校正。至少两个种子通过三端点、剂量单调和算子审计才允许 `INTERVENTIONALLY_FAITHFUL_TRANSUNET_REPLICATION`；否则写明具体失败门。
 
-- [ ] **Step 6: 运行测试与 smoke**
+- [x] **Step 6: 运行测试与 smoke**
 
 Run: `python -m pytest tests/unit/test_v8_causal_gate.py tests/integration/test_v8_transunet_mechanism_smoke.py tests/integration/test_activation_restore.py -q`
 

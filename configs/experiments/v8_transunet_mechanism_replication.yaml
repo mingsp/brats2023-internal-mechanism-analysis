@@ -52,6 +52,7 @@ statistics:
   multiplicity: holm_global
 formal:
   expected_patient_count_per_seed: 250
+  minimum_evaluable_patients_per_endpoint_per_seed: 20
   candidate_may_not_change_after_lock: true
   thresholds_may_not_change_after_lock: true
   test_is_single_confirmation_run: true

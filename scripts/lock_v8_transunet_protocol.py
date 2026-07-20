@@ -153,6 +153,16 @@ def validate_registered_configuration(config: Mapping[str, Any]) -> dict[str, An
         250,
         "test patient count",
     )
+    _require_equal(
+        int(
+            config.get("formal", {}).get(
+                "minimum_evaluable_patients_per_endpoint_per_seed",
+                -1,
+            )
+        ),
+        20,
+        "minimum evaluable patients per test endpoint and seed",
+    )
     return {
         "candidate_path_count": len(declared_ids),
         "validation_patient_count": 125,
