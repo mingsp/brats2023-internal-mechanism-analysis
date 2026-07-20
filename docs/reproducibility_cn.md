@@ -104,7 +104,42 @@ wait
 
 正式结果必须为六作业各 250 名患者、每名患者 49 个单元。当前门控结果为 `INSUFFICIENT_NETWORK_COVERAGE`；该状态是正式结果，不得降低覆盖阈值或更换过程群。首次汇总曾因 Pandas 尝试序列化 DataFrame 属性而在写表阶段停止；修复只让 Parquet 存储副本清空 `attrs`，不改变数值列。锁定提交、原错误、修订范围和正式结果哈希见 `v7_postprocessing_amendment.json`。
 
-## 6. 图件与结果清单
+## 6. TransUNet 过程候选与顺序确认
+
+V8 使用验证集过程轨迹在四条预声明 TransUNet 解码输入路径中最多选择一条候选，并在首次测试干预前生成内容寻址协议锁。三个模型种子的验证和正式干预均由服务器脚本并行执行：
+
+~~~bash
+cd /root/autodl-tmp/A_scheme_workspace/pptt_process_xai_workspace
+PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data \
+PYTHON_BIN="$PWD/.venv/bin/python" \
+bash scripts/server/run_v8_transunet_pipeline.sh --workspace "$PWD"
+~~~
+
+V8 锁定 `bottleneck_to_up1`。必要性、恢复性和剂量关系通过，但区域特异性因匹配位置不足而不可评估。该结果保持在 `results/v8_transunet_mechanism/`，不得修改后重跑为正结论。
+
+V9 在 V8 不变的前提下把验证集匹配可行性加入候选准入，并只对 V8 三个种子均未执行任何干预的共同患者运行：
+
+~~~bash
+PPTT_WORKSPACE_ROOT="$PWD" \
+PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data \
+PPTT_PYTHON_BIN="$PWD/.venv/bin/python" \
+bash scripts/server/run_v9_transunet_specificity.sh
+~~~
+
+V9 锁定 `skip_down3_to_up1`，但 26 人队列的可评估覆盖不足。V10 保持同一路径、算子和门槛，对剩余 224 名尚无该路径干预结局的测试患者进行最后一次顺序确认：
+
+~~~bash
+PPTT_WORKSPACE_ROOT="$PWD" \
+PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data \
+PPTT_PYTHON_BIN="$PWD/.venv/bin/python" \
+bash scripts/server/run_v10_transunet_path_confirmation.sh
+~~~
+
+V10 三个种子均通过必要性，恢复性未达到预注册 `d >= 0.8`，区域特异性置信区间均跨 0。最终科学状态为 `TRANSUNET_PROCESS_CANDIDATE_NOT_CAUSALLY_CONFIRMED`。V8-V10 统一按三轮 `alpha=0.05/3` 解释；不得在当前测试集运行第四轮、改选路径或降低门槛。完整数值和独立重构审计见 `docs/v8_transunet_mechanism_replication_results_cn.md`。
+
+上述脚本包含“锁或正式目录已存在即拒绝执行”的污染保护，只适用于从未生成这些正式结果的干净复现实例。已有正式目录不得删除后原位重跑。
+
+## 7. 图件与结果清单
 
 ~~~bash
 .venv/bin/python scripts/make_paper_figures.py --results-root results --language en --dpi 400
@@ -125,9 +160,9 @@ PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data \
 
 主文图固定为三组：图 1 定义 PPTT 的计算流程，图 2 展示相近终点下的全路径过程差异，图 3 展示完整 7×7 过程—恢复节点矩阵、反事实病例和宏微效应。V6 候选路径图与 `make_paper_figures.py` 生成的其余图件作为补充材料候选。图 3 的灰色单元表示不可评估，不得改绘为零。
 
-`manifests/result_inventory.json` 记录代码 commit、环境、运行命令、配置哈希、数据清单、模型权重、输出表行数、图件大小和所有结果文件 SHA-256。服务器目录不含 Git 元数据时，必须从协议锁注入 `--code-commit` 和 `--code-dirty false`；不得伪造提交。含 `smoke`、`debug`、`overfit`、`preflight`、`resume_check` 或 `dry_run` 的产物自动标为非正式结果。当前清单包含 6,639 个产物并通过内容寻址复核。
+`manifests/result_inventory.json` 记录代码 commit、环境、运行命令、配置哈希、数据清单、模型权重、输出表行数、图件大小和所有结果文件 SHA-256。服务器目录不含 Git 元数据时，必须从协议锁注入 `--code-commit` 和 `--code-dirty false`；不得伪造提交。含 `smoke`、`debug`、`overfit`、`preflight`、`resume_check` 或 `dry_run` 的产物自动标为非正式结果。V10 收口后的服务器只读临时清单包含 8,620 个产物并通过内容寻址复核；按照当前同步约束，该临时清单尚未拉取或覆盖本地仓库中的较早快照。
 
-## 7. 结果同步
+## 8. 结果同步
 
 ~~~bash
 rsync -av --info=progress2 \
