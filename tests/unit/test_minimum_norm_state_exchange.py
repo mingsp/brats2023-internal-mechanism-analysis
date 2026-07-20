@@ -89,6 +89,34 @@ def test_exchange_is_feasible_and_minimum_norm():
     assert edit.frobenius_norm < float(torch.linalg.vector_norm(edit.delta_h + null))
 
 
+def test_exchange_keeps_ill_conditioned_directions_above_locked_cutoff():
+    resize_rows = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0e-4]],
+        dtype=torch.float64,
+    )
+    observer_weight = torch.eye(2, dtype=torch.float64)
+    delta_logits = torch.tensor(
+        [[1.0, -2.0], [3.0, 4.0]],
+        dtype=torch.float64,
+    )
+
+    edit = minimum_norm_state_exchange(
+        resize_rows,
+        observer_weight,
+        delta_logits,
+        rcond=1.0e-7,
+    )
+
+    torch.testing.assert_close(
+        resize_rows @ edit.delta_h @ observer_weight.T,
+        delta_logits,
+        rtol=0,
+        atol=1.0e-10,
+    )
+    assert edit.effective_rank_spatial == 2
+    assert edit.target_max_abs_error <= 1.0e-10
+
+
 def test_equal_norm_nullspace_control_preserves_observer_logits():
     observer_weight = torch.tensor(
         [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],

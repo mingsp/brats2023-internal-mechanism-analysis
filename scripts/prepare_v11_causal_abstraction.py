@@ -498,6 +498,7 @@ def _matched_pairs(
         all_matches,
         candidates,
         output_shape=(160, 160),
+        rcond=float(configuration["intervention"]["pseudoinverse_rcond"]),
     )
     return retained, rank_audit
 

@@ -170,11 +170,11 @@ def stack_restart_logit_deltas(
 
 
 def _pseudoinverse(matrix: torch.Tensor, *, rcond: float) -> torch.Tensor:
-    if matrix.shape[0] <= matrix.shape[1]:
-        gram = matrix @ matrix.T
-        return matrix.T @ torch.linalg.pinv(gram, rtol=float(rcond))
-    gram = matrix.T @ matrix
-    return torch.linalg.pinv(gram, rtol=float(rcond)) @ matrix.T
+    # Forming a Gram matrix squares the condition number and changes an rcond
+    # cutoff from sigma to sigma**2.  Direct SVD therefore matters here: the
+    # validation operator deliberately retains weak but numerically admissible
+    # spatial directions under the preregistered cutoff.
+    return torch.linalg.pinv(matrix, rtol=float(rcond))
 
 
 def minimum_norm_state_exchange(
@@ -199,8 +199,12 @@ def minimum_norm_state_exchange(
         )
     if not torch.isfinite(torch.tensor(float(rcond))) or float(rcond) <= 0:
         raise ValueError("rcond must be finite and positive")
-    rank_spatial = int(torch.linalg.matrix_rank(spatial).item())
-    rank_channel = int(torch.linalg.matrix_rank(weight).item())
+    rank_spatial = int(
+        torch.linalg.matrix_rank(spatial, rtol=float(rcond)).item()
+    )
+    rank_channel = int(
+        torch.linalg.matrix_rank(weight, rtol=float(rcond)).item()
+    )
     if rank_spatial == 0 or rank_channel == 0:
         raise ValueError("state exchange requires nonzero spatial and channel rank")
 

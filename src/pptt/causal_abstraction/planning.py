@@ -208,6 +208,7 @@ def prune_matches_to_independent_resize_rows(
     candidates: pd.DataFrame,
     *,
     output_shape: tuple[int, int],
+    rcond: float = 1.0e-7,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Keep a deterministic maximal prefix that increases resize-row rank."""
 
@@ -217,6 +218,8 @@ def prune_matches_to_independent_resize_rows(
         raise ValueError("matches lack the registered identity columns")
     if required_candidates - set(candidates.columns):
         raise ValueError("candidates lack native geometry")
+    if not np.isfinite(float(rcond)) or float(rcond) <= 0:
+        raise ValueError("rcond must be finite and positive")
     candidate_index = candidates.set_index("row_id", verify_integrity=True)
     retained: list[pd.Series] = []
     diagnostics: list[dict[str, Any]] = []
@@ -260,7 +263,12 @@ def prune_matches_to_independent_resize_rows(
                 dtype=torch.float64,
             )
             candidate_matrix = torch.cat((*accepted_rows, row), dim=0)
-            candidate_rank = int(torch.linalg.matrix_rank(candidate_matrix).item())
+            candidate_rank = int(
+                torch.linalg.matrix_rank(
+                    candidate_matrix,
+                    rtol=float(rcond),
+                ).item()
+            )
             if candidate_rank <= rank:
                 continue
             retained.append(match)

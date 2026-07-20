@@ -105,3 +105,35 @@ def test_rank_pruning_removes_duplicate_resize_rows():
     assert 1 <= len(retained) <= 3
     assert diagnostics.loc[0, "retained_count"] == len(retained)
     assert diagnostics.loc[0, "spatial_rank"] == len(retained)
+
+
+def test_rank_pruning_uses_the_solver_cutoff_for_near_dependent_rows():
+    candidates = pd.DataFrame(
+        {
+            "row_id": ["r0", "r1"],
+            "patient_id": ["p1", "p1"],
+            "node": ["down1", "down1"],
+            "native_h": [1, 1],
+            "native_w": [2, 2],
+            "output_index": [4999, 5000],
+        }
+    )
+    matches = pd.DataFrame(
+        {
+            "status": ["MATCHED", "MATCHED"],
+            "patient_id": ["p1", "p1"],
+            "node": ["down1", "down1"],
+            "base_row_id": ["r0", "r1"],
+        }
+    )
+
+    retained, diagnostics = prune_matches_to_independent_resize_rows(
+        matches,
+        candidates,
+        output_shape=(1, 10000),
+        rcond=1.0e-3,
+    )
+
+    assert retained["base_row_id"].tolist() == ["r0"]
+    assert diagnostics.loc[0, "retained_count"] == 1
+    assert diagnostics.loc[0, "spatial_rank"] == 1
