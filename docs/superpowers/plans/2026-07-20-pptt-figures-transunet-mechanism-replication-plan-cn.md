@@ -31,7 +31,7 @@
 - Create: `src/pptt/lineage/direct_paths.py`
 - Create: `tests/unit/test_direct_path_cohorts.py`
 
-- [ ] **Step 1: 写失败测试，覆盖持续纠正、持续破坏、可靠性和源/接收节点合法性**
+- [x] **Step 1: 写失败测试，覆盖持续纠正、持续破坏、可靠性和源/接收节点合法性**
 
 ```python
 def test_direct_path_cohorts_are_output_anchored_and_reliable():
@@ -46,13 +46,13 @@ def test_direct_path_cohorts_are_output_anchored_and_reliable():
     assert np.all(final_state[cohorts.damage] != truth[cohorts.damage])
 ```
 
-- [ ] **Step 2: 确认测试因模块不存在而失败**
+- [x] **Step 2: 确认测试因模块不存在而失败**
 
 Run: `python -m pytest tests/unit/test_direct_path_cohorts.py -q`
 
 Expected: `ModuleNotFoundError: pptt.lineage.direct_paths`
 
-- [ ] **Step 3: 实现不可重叠的直接路径队列与类别平衡净恢复率**
+- [x] **Step 3: 实现不可重叠的直接路径队列与类别平衡净恢复率**
 
 ```python
 @dataclass(frozen=True)
@@ -72,13 +72,13 @@ def class_balanced_direct_net_recovery(
 
 约束：`0 <= source_index < receiver_index < K`；可靠性要求覆盖 `source_index:` 的全部后缀；纠正要求源节点错误、接收节点起始持续正确且原模型最终正确；破坏采用对称定义。
 
-- [ ] **Step 4: 运行单元测试与现有 lineage 测试**
+- [x] **Step 4: 运行单元测试与现有 lineage 测试**
 
 Run: `python -m pytest tests/unit/test_direct_path_cohorts.py tests/unit/test_lineage_cohorts.py tests/unit/test_lineage_depths.py -q`
 
 Expected: all passed.
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/pptt/lineage/direct_paths.py tests/unit/test_direct_path_cohorts.py
