@@ -744,7 +744,7 @@ It must also include the numerical gates from design sections 12.1--12.3, `boots
 
 - [ ] **Step 4: Implement lock creation and verification**
 
-The lock records configuration SHA-256, source-tree SHA-256, all nine checkpoint hashes, all 72 observer hashes, ordered validation/test patient hashes, fitted process hashes, environment identity, and the exact gate table. `write_protocol_lock` must be atomic and idempotent only for byte-identical content.
+The lock records configuration SHA-256, source-tree SHA-256, all nine checkpoint hashes, all 216 individual observer hashes (three model roles by three model seeds by eight nodes by three observer restarts), ordered validation/test patient hashes, fitted process hashes, environment identity, and the exact gate table. `write_protocol_lock` must be atomic and idempotent only for byte-identical content.
 
 - [ ] **Step 5: Run lock tests**
 
@@ -902,7 +902,7 @@ PPTT_ASSET_ROOT=/root/autodl-tmp/A_scheme_workspace/brats2023_data \
   .venv/bin/python scripts/verify_assets.py
 ```
 
-Expected: all nine model jobs, 72 observers, ordered validation/test manifests, and eight node adapters pass; otherwise stop with an explicit blocked status.
+Expected: all nine model jobs, all 216 individual observers, ordered validation/test manifests, and eight node adapters pass; otherwise stop with an explicit blocked status.
 
 - [ ] **Step 4: Fit validation processes and run history admission**
 
@@ -964,7 +964,7 @@ git commit -m "docs: audit V11 causal abstraction results"
 ## Plan Self-Review
 
 - **Scope:** only BraTS2023, U-Net, TransUNet, and no-skip structural control appear in the implementation matrix.
-- **No new training:** all nine segmentation checkpoints and 72 observers are reused; observer recomputation is blocked unless an asset/hash audit explicitly requires it.
+- **No new training:** all nine segmentation checkpoints and 216 individual observer files are reused; observer recomputation is blocked unless an asset/hash audit explicitly requires it.
 - **Full network:** all eight macro nodes and every downstream depth enter the formal worst-condition gate.
 - **Single method line:** state process, closed-form exchange, shared model, and controls all test the same causal-abstraction hypothesis; no CAM, region, frequency, or path-specific experiment is added.
 - **Causal boundary:** mathematical guarantees cover the operator and conditional error bounds; empirical gates determine whether the approximate abstraction is supported.

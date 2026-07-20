@@ -1,0 +1,85 @@
+name: v11_cross_architecture_causal_abstraction
+dataset: brats2023_2d
+fit_split: val
+formal_split: test
+main_models: [unet_baseline, transunet_r50_vit_b16]
+control_models: [unet_noskip]
+model_seeds: [42, 123, 3407]
+observer_seeds: [17, 29, 43]
+nodes: [down1, down2, down3, down4, up1, up2, up3, up4]
+relationship_states: [BC, FC, FP, FN, FW]
+truth_classes: [0, 1, 2, 3]
+doses: [0.0, 0.25, 0.5, 0.75, 1.0]
+transfer_directions:
+  - unet_baseline->transunet_r50_vit_b16
+  - transunet_r50_vit_b16->unet_baseline
+model_matrix: manifests/model_matrix.yaml
+observer_root: results/v1_observers
+validation_fit_root: results/v11_causal_abstraction/validation_fit
+formal_job_root: results/v11_causal_abstraction/formal_jobs
+output_root: results/v11_causal_abstraction
+protocol_lock: results/v11_causal_abstraction/v11_protocol_lock.json
+
+high_level_process:
+  state_count: 5
+  dirichlet_alpha: 0.5
+  patient_folds: 5
+  fold_seed: 20260720
+  history_tv_tolerance: 0.03
+
+matching:
+  same_patient_first: true
+  same_truth_class: true
+  without_replacement: true
+  max_pixels_per_patient_node_state: 128
+  boundary_edges: [1.5, 3.5, 7.5]
+  feature_norm_quantile_bins: 4
+  validation_locked_feature_norm_edges: true
+
+intervention:
+  operator: output_constrained_minimum_norm_state_exchange
+  pseudoinverse_rcond: 1.0e-7
+  null_control: equal_norm_observer_nullspace
+  maximum_reconstruction_error: 1.0e-5
+  minimum_state_realization: 0.95
+  maximum_restore_error: 1.0e-6
+  validation_locked_norm_and_leakage_limits: true
+
+coverage:
+  expected_validation_patients: 125
+  expected_formal_patients: 250
+  minimum_node_patients: 100
+  minimum_source_states: 2
+  minimum_state_patients: 50
+  minimum_state_pixels: 128
+
+statistics:
+  bootstrap_iterations: 10000
+  bootstrap_seed: 20260720
+  holm_alpha: 0.05
+  patient_equal: true
+  seed_equal: true
+  architecture_equal_for_shared_process: true
+
+gates:
+  maximum_macro_tv: 0.15
+  maximum_worst_tv: 0.20
+  maximum_worst_tv_ci_high: 0.25
+  maximum_shared_increment: 0.03
+  maximum_shared_increment_ci_high: 0.05
+  minimum_specificity_delta: 0.10
+  minimum_specificity_ci_low: 0.05
+  maximum_null_clean_tv: 0.05
+  minimum_order_advantage: 0.10
+  minimum_dose_aligned_fraction: 0.90
+  required_randomized_controls: [random_observer, state_permutation]
+  structure_delta_ci_low_must_exceed_zero: true
+
+protocol:
+  lock_before_formal_intervention: true
+  thresholds_may_not_change_after_lock: true
+  patients_may_not_change_after_lock: true
+  validation_processes_may_not_change_after_lock: true
+  formal_mode_rejects_patient_limit: true
+  smoke_results_are_never_formal: true
+
