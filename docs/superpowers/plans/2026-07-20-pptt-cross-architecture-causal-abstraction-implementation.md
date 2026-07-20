@@ -4,9 +4,38 @@
 
 **Goal:** Implement and formally validate whether one low-capacity pixel-decision state-transition model predicts full downstream intervention trajectories in frozen U-Net and TransUNet models on BraTS2023, while retaining no-skip U-Net only as a whole-path structural control.
 
-**Architecture:** Add a focused `pptt.causal_abstraction` package for state encoding, patient-equal transition kernels, output-constrained minimum-norm state exchange, full-path metrics, and hard conclusion gates. Reuse the existing model adapters, frozen linear observers, BraTS patient manifests, atomic result patterns, and nine frozen model checkpoints; no segmentation model or dataset implementation is added. Validation fitting and calibration are locked before formal test interventions, and every result is reduced at patient level before architecture-level inference.
+**Architecture:** Implement one continuous method path: architecture-specific feature tensors are mapped to a common pixel-decision state trajectory; a closed-form minimum-norm operator translates a high-level state intervention back to the selected node; and a full-path evaluator compares the high-level counterfactual rollout with every downstream network state. Reuse the existing model adapters, frozen linear observers, BraTS patient manifests, atomic result patterns, and nine frozen model checkpoints. Validation fitting and calibration are locked before formal test interventions, and every result is reduced at patient level before architecture-level inference.
 
 **Tech Stack:** Python 3.10, PyTorch 2.1, NumPy 1.26, SciPy 1.11, pandas 2.2, PyArrow 17, PyYAML, pytest, Hypothesis, existing PPTT adapters and observer artifacts.
+
+---
+
+## Authoritative Execution Spine
+
+Only the following three objects constitute the method:
+
+1. `alpha`: the architecture-specific readout that maps each registered feature tensor to one common five-state pixel-decision representation;
+2. `omega`: the closed-form minimum-norm translator from `do(S_r=q)` to a reversible feature edit at node `r`;
+3. `H`: the low-capacity state-transition process whose complete downstream rollout is compared with the intervened network trajectory.
+
+The implementation is accepted only through three nested validation questions:
+
+1. **Within-architecture faithfulness:** does `H_U` or `H_T` predict the complete downstream intervention trajectory of its source architecture?
+2. **Cross-architecture abstraction:** do `H_U -> TransUNet`, `H_T -> U-Net`, and `H_shared` pass the locked full-path conditions across all eight nodes?
+3. **Structural diagnostic sensitivity:** does the baseline/no-skip process distance exceed baseline seed variability when the identical method is applied end to end?
+
+Natural matching, observer reliability, intervention OOD checks, dose checks, nullspace edits, randomized observers, and depth permutation are safeguards against alternative explanations. They must remain subordinate audit fields and must not be presented as additional method branches. The no-skip model is a structural control; no per-skip masking or skip-importance ranking is authorized.
+
+### Implementation Status
+
+| Method role | Implementation | Status |
+|---|---|---|
+| `alpha` state semantics | `states.py`, `kernels.py` | implemented and unit tested |
+| `omega` intervention translator | `interventions.py` | implemented and theorem tested |
+| full downstream execution | `runtime.py` | implemented and integration tested |
+| auxiliary natural-state support | `matching.py` | implemented; audit role only |
+| intervention-alignment inference | `metrics.py`, `gates.py` | next implementation block |
+| immutable formal execution | V11 lock, runner, summarizer | pending after inference tests |
 
 ---
 
@@ -19,8 +48,8 @@
 - `src/pptt/causal_abstraction/kernels.py`: patient-equal first-order kernels, rollout, shared kernels, cross-transfer, and history-dependence admission.
 - `src/pptt/causal_abstraction/interventions.py`: bilinear resize matrix, closed-form minimum-norm edit, nullspace control, and operator audit.
 - `src/pptt/causal_abstraction/runtime.py`: model-hook execution and complete downstream counterfactual tracing.
-- `src/pptt/causal_abstraction/matching.py`: deterministic natural source/base matching and patient caps.
-- `src/pptt/causal_abstraction/metrics.py`: patient-level TV errors, shared-model non-inferiority, specificity gains, dose direction, and structural process distance.
+- `src/pptt/causal_abstraction/matching.py`: auxiliary natural source/base matching and patient caps; not a method output.
+- `src/pptt/causal_abstraction/metrics.py`: one patient-level intervention-alignment criterion, its cross-architecture transfer form, and the secondary structural sensitivity contrast.
 - `src/pptt/causal_abstraction/gates.py`: fixed three-state gate system and claim decision table.
 - `configs/experiments/v11_causal_abstraction.yaml`: the only V11 numerical protocol.
 - `scripts/lock_v11_causal_abstraction_protocol.py`: immutable asset, model, observer, patient, kernel, and configuration lock.
@@ -439,7 +468,7 @@ git add src/pptt/models/protocol.py src/pptt/models/adapters.py src/pptt/causal_
 git commit -m "feat: trace reversible full-path interventions"
 ```
 
-## Task 5: Deterministic Natural Source Matching
+## Task 5: Auxiliary Validity Guard - Deterministic Natural Source Matching
 
 **Files:**
 - Create: `src/pptt/causal_abstraction/matching.py`
@@ -510,7 +539,7 @@ git add src/pptt/causal_abstraction/matching.py tests/unit/test_causal_source_ma
 git commit -m "feat: add deterministic natural state matching"
 ```
 
-## Task 6: Full-Path Metrics and Structural Sensitivity
+## Task 6: Unified Full-Path Intervention Alignment
 
 **Files:**
 - Create: `src/pptt/causal_abstraction/metrics.py`
