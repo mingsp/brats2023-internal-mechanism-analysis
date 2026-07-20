@@ -686,6 +686,7 @@ def main() -> int:
     workspace = args.workspace_root.resolve()
     config_path = _resolve_under(workspace, args.config)
     config = _load_yaml(config_path)
+    experiment_id = str(config.get("experiment_id", "v8")).lower()
     lock_path = (
         _resolve_under(workspace, args.protocol_lock)
         if args.protocol_lock is not None
@@ -759,6 +760,9 @@ def main() -> int:
         minimum_standardized_effect=float(
             statistics_config["minimum_standardized_effect"]
         ),
+        minimum_patient_monotonic_fraction=float(
+            statistics_config.get("minimum_patient_monotonic_fraction", 0.0)
+        ),
     )
     report = _diagnostic_report(
         lock=lock,
@@ -807,7 +811,7 @@ def main() -> int:
         "protocol_lock_sha256": protocol_lock_sha256,
         "outputs": outputs,
     }
-    _write_json_atomic(output_root / "v8_status.json", status)
+    _write_json_atomic(output_root / f"{experiment_id}_status.json", status)
     print(json.dumps(_json_ready(status), ensure_ascii=False, indent=2), flush=True)
     print(
         statistics[

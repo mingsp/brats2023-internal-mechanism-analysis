@@ -41,11 +41,14 @@ def evaluate_replication_gate(
     minimum_patients_per_seed: int,
     alpha: float,
     minimum_standardized_effect: float,
+    minimum_patient_monotonic_fraction: float = 0.0,
 ) -> dict[str, Any]:
     if int(minimum_supported_seeds) < 1:
         raise ValueError("minimum_supported_seeds must be positive")
     if int(minimum_patients_per_seed) < 2:
         raise ValueError("minimum_patients_per_seed must be at least two")
+    if not 0.0 <= float(minimum_patient_monotonic_fraction) <= 1.0:
+        raise ValueError("minimum_patient_monotonic_fraction must be in [0, 1]")
     endpoints = ("necessity", "restoration", "specificity")
     records = [dict(row) for row in rows]
     endpoint_audit: dict[str, dict[str, Any]] = {}
@@ -79,6 +82,8 @@ def evaluate_replication_gate(
         for row in dose_records
         if bool(row.get("monotonic", False))
         and int(row.get("patient_count", 0)) >= int(minimum_patients_per_seed)
+        and float(row.get("patient_monotonic_fraction", 1.0))
+        >= float(minimum_patient_monotonic_fraction)
     )
     operator_supported = sorted(
         int(row["model_seed"])
@@ -107,6 +112,9 @@ def evaluate_replication_gate(
         "minimum_patients_per_seed": int(minimum_patients_per_seed),
         "alpha": float(alpha),
         "minimum_standardized_effect": float(minimum_standardized_effect),
+        "minimum_patient_monotonic_fraction": float(
+            minimum_patient_monotonic_fraction
+        ),
         "endpoint_audit": endpoint_audit,
         "dose_supported_model_seeds": sorted(set(dose_supported)),
         "operator_supported_model_seeds": sorted(set(operator_supported)),

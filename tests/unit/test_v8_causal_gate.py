@@ -105,3 +105,21 @@ def test_small_evaluable_sample_cannot_pass_even_with_large_effect():
     assert not result["gates"]["necessity"]
     assert not result["gates"]["restoration"]
     assert not result["gates"]["specificity"]
+
+
+def test_registered_patient_level_dose_threshold_is_enforced():
+    dose_rows = _dose_rows()
+    for row in dose_rows:
+        row["patient_monotonic_fraction"] = 0.7
+    result = evaluate_replication_gate(
+        _rows(),
+        dose_rows=dose_rows,
+        operator_rows=_operator_rows(),
+        minimum_supported_seeds=2,
+        minimum_patients_per_seed=20,
+        minimum_patient_monotonic_fraction=0.8,
+        alpha=0.05,
+        minimum_standardized_effect=0.8,
+    )
+
+    assert not result["gates"]["dose_response"]

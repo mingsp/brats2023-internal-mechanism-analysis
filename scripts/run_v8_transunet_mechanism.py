@@ -145,6 +145,38 @@ def _group_records(records: list[SliceRecord]) -> dict[str, list[SliceRecord]]:
     }
 
 
+def resolve_registered_patient_ids(
+    all_patient_ids: tuple[str, ...] | list[str],
+    protocol_lock: Mapping[str, Any],
+    *,
+    registry_mode: str,
+    expected_split_count: int,
+    expected_formal_count: int,
+) -> list[str]:
+    available = sorted(str(value) for value in all_patient_ids)
+    if len(available) != int(expected_split_count) or len(set(available)) != len(
+        available
+    ):
+        raise ValueError("test-patient inventory differs from the data configuration")
+    registered = [str(value) for value in protocol_lock.get("test_patient_ids", ())]
+    if registry_mode == "full_split":
+        if int(expected_formal_count) != int(expected_split_count):
+            raise ValueError("full-split formal count differs from the split count")
+        if registered != available:
+            raise ValueError("full-split protocol registry differs from test data")
+        return available
+    if registry_mode not in {"protocol_lock_subset", "common_v8_unintervened"}:
+        raise ValueError(f"unknown formal patient registry mode: {registry_mode}")
+    if (
+        len(registered) != int(expected_formal_count)
+        or len(set(registered)) != len(registered)
+        or registered != sorted(registered)
+        or not set(registered).issubset(available)
+    ):
+        raise ValueError("locked formal subset is invalid")
+    return registered
+
+
 def _load_slice(record: SliceRecord) -> tuple[torch.Tensor, np.ndarray]:
     image = torch.from_numpy(
         ensure_chw(np.load(record.image_path, allow_pickle=False))
@@ -756,9 +788,22 @@ def main() -> int:
             matrix.asset_root / str(split_config["mask_dir"]),
         )
     )
-    patient_ids = sorted(grouped)
-    if len(patient_ids) != int(split_config["patient_count"]):
-        raise ValueError("V8 test-patient inventory differs from the data config")
+    preliminary_lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    if not isinstance(preliminary_lock, dict):
+        raise ValueError("protocol lock must contain a JSON object")
+    formal_config = config.get("formal", {})
+    patient_ids = resolve_registered_patient_ids(
+        sorted(grouped),
+        preliminary_lock,
+        registry_mode=str(formal_config.get("patient_registry_mode", "full_split")),
+        expected_split_count=int(split_config["patient_count"]),
+        expected_formal_count=int(
+            formal_config.get(
+                "expected_patient_count_per_seed",
+                split_config["patient_count"],
+            )
+        ),
+    )
     lock = load_and_validate_protocol_lock(
         lock_path,
         active_configuration_sha256=sha256_file(config_path),

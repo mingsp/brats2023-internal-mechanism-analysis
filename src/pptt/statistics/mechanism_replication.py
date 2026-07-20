@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from copy import deepcopy
 from typing import Any
 
 import numpy as np
@@ -299,7 +300,113 @@ def select_registered_candidate(
     }
 
 
+def select_feasible_registered_candidate(
+    process_registration: Mapping[str, Any],
+    feasibility_rows: Iterable[Mapping[str, Any]] | pd.DataFrame,
+    *,
+    required_seeds: Sequence[int],
+    minimum_feasible_patients_per_seed: int,
+) -> dict[str, Any]:
+    """Apply a validation-only intervention-feasibility gate to candidates."""
+    seeds = _unique_ints(required_seeds, name="required_seeds")
+    if int(minimum_feasible_patients_per_seed) < 1:
+        raise ValueError("minimum feasible patient count must be positive")
+    candidates = deepcopy(list(process_registration.get("evaluated_candidates", ())))
+    if not candidates:
+        raise ValueError("process registration has no evaluated candidates")
+    feasibility = pd.DataFrame(_records(feasibility_rows))
+    required_columns = {
+        "path_id",
+        "topology_order",
+        "model_seed",
+        "specificity_evaluable_patient_count",
+        "aggregate_matched_feature_count",
+    }
+    missing = required_columns - set(feasibility.columns)
+    if missing:
+        raise ValueError(f"feasibility table lacks columns: {sorted(missing)}")
+    if feasibility.duplicated(["path_id", "model_seed"]).any():
+        raise ValueError("feasibility table contains duplicate path-seed rows")
+
+    evaluated: list[dict[str, Any]] = []
+    for candidate in candidates:
+        path_id = str(candidate["path_id"])
+        rows = feasibility[feasibility["path_id"].astype(str) == path_id]
+        by_seed = {
+            int(row["model_seed"]): row
+            for row in rows.to_dict("records")
+        }
+        if set(by_seed) != set(seeds) or len(rows) != len(seeds):
+            raise ValueError(f"feasibility seed matrix is incomplete for {path_id}")
+        topology_orders = {
+            int(row["topology_order"]) for row in rows.to_dict("records")
+        }
+        if topology_orders != {int(candidate["topology_order"])}:
+            raise ValueError(f"feasibility topology differs for {path_id}")
+        feasibility_results = []
+        for seed in seeds:
+            row = by_seed[seed]
+            count = int(row["specificity_evaluable_patient_count"])
+            matched = int(row["aggregate_matched_feature_count"])
+            if count < 0 or matched < 0:
+                raise ValueError("feasibility counts must be nonnegative")
+            feasibility_results.append(
+                {
+                    "model_seed": seed,
+                    "specificity_evaluable_patient_count": count,
+                    "aggregate_matched_feature_count": matched,
+                    "passed": count >= int(minimum_feasible_patients_per_seed),
+                }
+            )
+        process_passed = bool(candidate.get("passed", False))
+        feasibility_passed = all(row["passed"] for row in feasibility_results)
+        candidate.update(
+            {
+                "process_passed": process_passed,
+                "feasibility_passed": feasibility_passed,
+                "feasibility_results": feasibility_results,
+                "passed": bool(process_passed and feasibility_passed),
+            }
+        )
+        evaluated.append(candidate)
+
+    passing = [row for row in evaluated if row["passed"]]
+    passing.sort(
+        key=lambda row: (
+            -float(row["minimum_seed_effect"]),
+            -float(row["mean_seed_effect"]),
+            int(row["topology_order"]),
+            str(row["path_id"]),
+        )
+    )
+    base = {
+        "evaluated_candidates": evaluated,
+        "required_model_seeds": list(seeds),
+        "minimum_feasible_patients_per_seed": int(
+            minimum_feasible_patients_per_seed
+        ),
+        "selection_rule": (
+            "process_gate_then_all_seed_matching_feasibility_then_"
+            "maximum_minimum_effect_then_mean_effect_then_topology"
+        ),
+    }
+    if not passing:
+        return {
+            **base,
+            "status": "NO_FEASIBLE_TRANSUNET_CANDIDATE",
+            "test_intervention_authorized": False,
+            "candidate": None,
+        }
+    return {
+        **base,
+        "status": "REGISTERED_FEASIBLE_TRANSUNET_CANDIDATE",
+        "test_intervention_authorized": True,
+        "candidate": passing[0],
+    }
+
+
 __all__ = [
+    "select_feasible_registered_candidate",
     "select_registered_candidate",
     "summarize_validation_candidates",
 ]
